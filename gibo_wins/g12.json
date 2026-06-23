@@ -1,0 +1,1021 @@
+{
+  "version": 1,
+  "cho_formation": "msm_s",
+  "han_formation": "smms",
+  "moves": [
+    {
+      "fr": 9,
+      "fc": 7,
+      "tr": 7,
+      "tc": 6,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 0,
+      "fc": 6,
+      "tr": 2,
+      "tc": 5,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 7,
+      "fc": 7,
+      "tr": 7,
+      "tc": 2,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 3,
+      "fc": 0,
+      "tr": 3,
+      "tc": 1,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 6,
+      "fc": 2,
+      "tr": 6,
+      "tc": 3,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 0,
+      "fc": 2,
+      "tr": 2,
+      "tc": 3,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 8,
+      "fc": 4,
+      "tr": 9,
+      "tc": 4,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 2,
+      "fc": 7,
+      "tr": 2,
+      "tc": 4,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 6,
+      "fc": 6,
+      "tr": 6,
+      "tc": 5,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 3,
+      "fc": 4,
+      "tr": 4,
+      "tc": 4,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 6,
+      "fc": 0,
+      "tr": 5,
+      "tc": 0,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 3,
+      "fc": 8,
+      "tr": 3,
+      "tc": 7,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 7,
+      "fc": 2,
+      "tr": 7,
+      "tc": 8,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 2,
+      "fc": 4,
+      "tr": 2,
+      "tc": 8,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 7,
+      "fc": 6,
+      "tr": 8,
+      "tc": 4,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 0,
+      "fc": 1,
+      "tr": 3,
+      "tc": 3,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 5,
+      "fc": 0,
+      "tr": 4,
+      "tc": 0,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 0,
+      "fc": 8,
+      "tr": 1,
+      "tc": 8,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 6,
+      "fc": 3,
+      "tr": 5,
+      "tc": 3,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 3,
+      "fc": 2,
+      "tr": 4,
+      "tc": 2,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 6,
+      "fc": 4,
+      "tr": 5,
+      "tc": 4,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 3,
+      "fc": 1,
+      "tr": 4,
+      "tc": 1,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 4,
+      "fc": 0,
+      "tr": 3,
+      "tc": 0,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 2,
+      "fc": 1,
+      "tr": 2,
+      "tc": 4,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 9,
+      "fc": 1,
+      "tr": 7,
+      "tc": 2,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 3,
+      "fc": 6,
+      "tr": 4,
+      "tc": 6,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 9,
+      "fc": 8,
+      "tr": 9,
+      "tc": 7,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 3,
+      "fc": 7,
+      "tr": 4,
+      "tc": 7,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 7,
+      "fc": 1,
+      "tr": 7,
+      "tc": 3,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 3,
+      "fc": 3,
+      "tr": 5,
+      "tc": 6,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 7,
+      "fc": 3,
+      "tr": 7,
+      "tc": 1,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 5,
+      "fc": 6,
+      "tr": 8,
+      "tc": 4,
+      "captured": "M",
+      "side": "han"
+    },
+    {
+      "fr": 7,
+      "fc": 2,
+      "tr": 8,
+      "tc": 4,
+      "captured": "S",
+      "side": "cho"
+    },
+    {
+      "fr": 0,
+      "fc": 7,
+      "tr": 3,
+      "tc": 5,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 7,
+      "fc": 8,
+      "tr": 3,
+      "tc": 8,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 4,
+      "fc": 4,
+      "tr": 5,
+      "tc": 4,
+      "captured": "J",
+      "side": "han"
+    },
+    {
+      "fr": 5,
+      "fc": 3,
+      "tr": 5,
+      "tc": 4,
+      "captured": "J",
+      "side": "cho"
+    },
+    {
+      "fr": 3,
+      "fc": 5,
+      "tr": 5,
+      "tc": 2,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 9,
+      "fc": 7,
+      "tr": 8,
+      "tc": 7,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 5,
+      "fc": 2,
+      "tr": 8,
+      "tc": 4,
+      "captured": "M",
+      "side": "han"
+    },
+    {
+      "fr": 9,
+      "fc": 3,
+      "tr": 8,
+      "tc": 4,
+      "captured": "S",
+      "side": "cho"
+    },
+    {
+      "fr": 2,
+      "fc": 8,
+      "tr": 0,
+      "tc": 8,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 3,
+      "fc": 8,
+      "tr": 7,
+      "tc": 8,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 0,
+      "fc": 8,
+      "tr": 6,
+      "tc": 8,
+      "captured": "J",
+      "side": "han"
+    },
+    {
+      "fr": 9,
+      "fc": 6,
+      "tr": 6,
+      "tc": 8,
+      "captured": "P",
+      "side": "cho"
+    },
+    {
+      "fr": 1,
+      "fc": 8,
+      "tr": 6,
+      "tc": 8,
+      "captured": "S",
+      "side": "han"
+    },
+    {
+      "fr": 8,
+      "fc": 7,
+      "tr": 7,
+      "tc": 7,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 6,
+      "fc": 8,
+      "tr": 6,
+      "tc": 5,
+      "captured": "J",
+      "side": "han"
+    },
+    {
+      "fr": 7,
+      "fc": 8,
+      "tr": 7,
+      "tc": 4,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 6,
+      "fc": 5,
+      "tr": 6,
+      "tc": 1,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 7,
+      "fc": 4,
+      "tr": 3,
+      "tc": 4,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 4,
+      "fc": 2,
+      "tr": 4,
+      "tc": 3,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 7,
+      "fc": 7,
+      "tr": 7,
+      "tc": 4,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 4,
+      "fc": 6,
+      "tr": 4,
+      "tc": 5,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 9,
+      "fc": 2,
+      "tr": 6,
+      "tc": 4,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 4,
+      "fc": 7,
+      "tr": 4,
+      "tc": 6,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 7,
+      "fc": 1,
+      "tr": 4,
+      "tc": 1,
+      "captured": "J",
+      "side": "cho"
+    },
+    {
+      "fr": 4,
+      "fc": 3,
+      "tr": 4,
+      "tc": 4,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 5,
+      "fc": 4,
+      "tr": 4,
+      "tc": 4,
+      "captured": "J",
+      "side": "cho"
+    },
+    {
+      "fr": 4,
+      "fc": 5,
+      "tr": 4,
+      "tc": 4,
+      "captured": "J",
+      "side": "han"
+    },
+    {
+      "fr": 4,
+      "fc": 1,
+      "tr": 7,
+      "tc": 1,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 2,
+      "fc": 3,
+      "tr": 4,
+      "tc": 2,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 6,
+      "fc": 4,
+      "tr": 4,
+      "tc": 1,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 6,
+      "fc": 1,
+      "tr": 4,
+      "tc": 1,
+      "captured": "S",
+      "side": "han"
+    },
+    {
+      "fr": 3,
+      "fc": 4,
+      "tr": 6,
+      "tc": 4,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 4,
+      "fc": 2,
+      "tr": 6,
+      "tc": 3,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 9,
+      "fc": 0,
+      "tr": 9,
+      "tc": 1,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 0,
+      "fc": 0,
+      "tr": 3,
+      "tc": 0,
+      "captured": "J",
+      "side": "han"
+    },
+    {
+      "fr": 7,
+      "fc": 4,
+      "tr": 7,
+      "tc": 8,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 4,
+      "fc": 4,
+      "tr": 5,
+      "tc": 4,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 6,
+      "fc": 4,
+      "tr": 6,
+      "tc": 2,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 6,
+      "fc": 3,
+      "tr": 8,
+      "tc": 2,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 9,
+      "fc": 4,
+      "tr": 9,
+      "tc": 3,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 3,
+      "fc": 0,
+      "tr": 3,
+      "tc": 3,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 7,
+      "fc": 8,
+      "tr": 7,
+      "tc": 3,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 3,
+      "fc": 3,
+      "tr": 7,
+      "tc": 3,
+      "captured": "C",
+      "side": "han"
+    },
+    {
+      "fr": 8,
+      "fc": 4,
+      "tr": 7,
+      "tc": 3,
+      "captured": "C",
+      "side": "cho"
+    },
+    {
+      "fr": 4,
+      "fc": 1,
+      "tr": 6,
+      "tc": 1,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 6,
+      "fc": 2,
+      "tr": 9,
+      "tc": 2,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 8,
+      "fc": 2,
+      "tr": 7,
+      "tc": 0,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 9,
+      "fc": 1,
+      "tr": 8,
+      "tc": 1,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 5,
+      "fc": 4,
+      "tr": 6,
+      "tc": 4,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 9,
+      "fc": 2,
+      "tr": 9,
+      "tc": 4,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 6,
+      "fc": 4,
+      "tr": 6,
+      "tc": 3,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 7,
+      "fc": 3,
+      "tr": 8,
+      "tc": 3,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 2,
+      "fc": 5,
+      "tr": 4,
+      "tc": 4,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 9,
+      "fc": 5,
+      "tr": 8,
+      "tc": 4,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 4,
+      "fc": 4,
+      "tr": 6,
+      "tc": 5,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 9,
+      "fc": 4,
+      "tr": 3,
+      "tc": 4,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 7,
+      "fc": 0,
+      "tr": 5,
+      "tc": 1,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 8,
+      "fc": 1,
+      "tr": 9,
+      "tc": 1,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 5,
+      "fc": 1,
+      "tr": 4,
+      "tc": 3,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 9,
+      "fc": 1,
+      "tr": 8,
+      "tc": 1,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 4,
+      "fc": 3,
+      "tr": 6,
+      "tc": 2,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 8,
+      "fc": 1,
+      "tr": 9,
+      "tc": 1,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 6,
+      "fc": 2,
+      "tr": 8,
+      "tc": 3,
+      "captured": "G",
+      "side": "han"
+    },
+    {
+      "fr": 9,
+      "fc": 3,
+      "tr": 8,
+      "tc": 3,
+      "captured": "M",
+      "side": "cho"
+    },
+    {
+      "fr": 4,
+      "fc": 6,
+      "tr": 5,
+      "tc": 6,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 8,
+      "fc": 3,
+      "tr": 9,
+      "tc": 3,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 5,
+      "fc": 6,
+      "tr": 6,
+      "tc": 6,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 9,
+      "fc": 1,
+      "tr": 8,
+      "tc": 1,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 6,
+      "fc": 5,
+      "tr": 8,
+      "tc": 6,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 8,
+      "fc": 4,
+      "tr": 9,
+      "tc": 5,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 8,
+      "fc": 6,
+      "tr": 7,
+      "tc": 4,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 9,
+      "fc": 5,
+      "tr": 8,
+      "tc": 4,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 7,
+      "fc": 4,
+      "tr": 5,
+      "tc": 5,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 3,
+      "fc": 4,
+      "tr": 9,
+      "tc": 4,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 6,
+      "fc": 6,
+      "tr": 6,
+      "tc": 5,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 8,
+      "fc": 1,
+      "tr": 9,
+      "tc": 1,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 1,
+      "fc": 4,
+      "tr": 0,
+      "tc": 4,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 7,
+      "fc": 1,
+      "tr": 0,
+      "tc": 1,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 6,
+      "fc": 1,
+      "tr": 0,
+      "tc": 1,
+      "captured": "P",
+      "side": "han"
+    },
+    {
+      "fr": 9,
+      "fc": 1,
+      "tr": 0,
+      "tc": 1,
+      "captured": "C",
+      "side": "cho"
+    },
+    {
+      "fr": 6,
+      "fc": 5,
+      "tr": 6,
+      "tc": 4,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 0,
+      "fc": 1,
+      "tr": 5,
+      "tc": 1,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 5,
+      "fc": 5,
+      "tr": 7,
+      "tc": 6,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 5,
+      "fc": 1,
+      "tr": 5,
+      "tc": 4,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 0,
+      "fc": 5,
+      "tr": 1,
+      "tc": 4,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 5,
+      "fc": 4,
+      "tr": 4,
+      "tc": 4,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 0,
+      "fc": 4,
+      "tr": 0,
+      "tc": 5,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 4,
+      "fc": 4,
+      "tr": 4,
+      "tc": 5,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 1,
+      "fc": 4,
+      "tr": 1,
+      "tc": 5,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 8,
+      "fc": 4,
+      "tr": 8,
+      "tc": 3,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 0,
+      "fc": 3,
+      "tr": 1,
+      "tc": 4,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 4,
+      "fc": 5,
+      "tr": 4,
+      "tc": 6,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 6,
+      "fc": 4,
+      "tr": 7,
+      "tc": 4,
+      "captured": null,
+      "side": "han"
+    }
+  ],
+  "result": null,
+  "note": "",
+  "finalScore": {
+    "cho": 23,
+    "han": 23.5
+  }
+}

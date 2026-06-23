@@ -1,0 +1,421 @@
+{
+  "version": 1,
+  "cho_formation": "msms",
+  "han_formation": "msm_s",
+  "moves": [
+    {
+      "fr": 6,
+      "fc": 8,
+      "tr": 6,
+      "tc": 7,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 1,
+      "fc": 4,
+      "tr": 0,
+      "tc": 4,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 9,
+      "fc": 6,
+      "tr": 7,
+      "tc": 5,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 0,
+      "fc": 1,
+      "tr": 2,
+      "tc": 2,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 7,
+      "fc": 7,
+      "tr": 7,
+      "tc": 4,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 2,
+      "fc": 1,
+      "tr": 2,
+      "tc": 4,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 6,
+      "fc": 0,
+      "tr": 6,
+      "tc": 1,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 2,
+      "fc": 4,
+      "tr": 2,
+      "tc": 0,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 9,
+      "fc": 1,
+      "tr": 7,
+      "tc": 0,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 3,
+      "fc": 0,
+      "tr": 3,
+      "tc": 1,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 7,
+      "fc": 0,
+      "tr": 5,
+      "tc": 1,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 0,
+      "fc": 2,
+      "tr": 3,
+      "tc": 0,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 5,
+      "fc": 1,
+      "tr": 4,
+      "tc": 3,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 3,
+      "fc": 2,
+      "tr": 3,
+      "tc": 3,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 4,
+      "fc": 3,
+      "tr": 3,
+      "tc": 1,
+      "captured": "J",
+      "side": "cho"
+    },
+    {
+      "fr": 2,
+      "fc": 0,
+      "tr": 9,
+      "tc": 0,
+      "captured": "C",
+      "side": "han"
+    },
+    {
+      "fr": 3,
+      "fc": 1,
+      "tr": 1,
+      "tc": 2,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 0,
+      "fc": 3,
+      "tr": 1,
+      "tc": 3,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 1,
+      "fc": 2,
+      "tr": 0,
+      "tc": 0,
+      "captured": "C",
+      "side": "cho"
+    },
+    {
+      "fr": 9,
+      "fc": 0,
+      "tr": 0,
+      "tc": 0,
+      "captured": "M",
+      "side": "han"
+    },
+    {
+      "fr": 9,
+      "fc": 8,
+      "tr": 5,
+      "tc": 8,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 2,
+      "fc": 7,
+      "tr": 9,
+      "tc": 7,
+      "captured": "S",
+      "side": "han"
+    },
+    {
+      "fr": 5,
+      "fc": 8,
+      "tr": 5,
+      "tc": 2,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 2,
+      "fc": 2,
+      "tr": 1,
+      "tc": 4,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 6,
+      "fc": 4,
+      "tr": 6,
+      "tc": 5,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 3,
+      "fc": 8,
+      "tr": 3,
+      "tc": 7,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 7,
+      "fc": 4,
+      "tr": 2,
+      "tc": 4,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 0,
+      "fc": 4,
+      "tr": 0,
+      "tc": 3,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 7,
+      "fc": 1,
+      "tr": 7,
+      "tc": 6,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 0,
+      "fc": 8,
+      "tr": 8,
+      "tc": 8,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 9,
+      "fc": 5,
+      "tr": 8,
+      "tc": 5,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 9,
+      "fc": 7,
+      "tr": 9,
+      "tc": 2,
+      "captured": "S",
+      "side": "han"
+    },
+    {
+      "fr": 5,
+      "fc": 2,
+      "tr": 5,
+      "tc": 1,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 0,
+      "fc": 0,
+      "tr": 0,
+      "tc": 4,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 7,
+      "fc": 6,
+      "tr": 7,
+      "tc": 3,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 3,
+      "fc": 6,
+      "tr": 3,
+      "tc": 5,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 5,
+      "fc": 1,
+      "tr": 3,
+      "tc": 1,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 3,
+      "fc": 0,
+      "tr": 0,
+      "tc": 2,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 3,
+      "fc": 1,
+      "tr": 1,
+      "tc": 1,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 0,
+      "fc": 2,
+      "tr": 3,
+      "tc": 0,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 1,
+      "fc": 1,
+      "tr": 3,
+      "tc": 1,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 3,
+      "fc": 0,
+      "tr": 0,
+      "tc": 2,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 3,
+      "fc": 1,
+      "tr": 1,
+      "tc": 1,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 0,
+      "fc": 2,
+      "tr": 3,
+      "tc": 0,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 1,
+      "fc": 1,
+      "tr": 1,
+      "tc": 0,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 3,
+      "fc": 0,
+      "tr": 5,
+      "tc": 3,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 6,
+      "fc": 2,
+      "tr": 5,
+      "tc": 2,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 8,
+      "fc": 8,
+      "tr": 8,
+      "tc": 5,
+      "captured": "G",
+      "side": "han"
+    },
+    {
+      "fr": 8,
+      "fc": 4,
+      "tr": 7,
+      "tc": 4,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 5,
+      "fc": 3,
+      "tr": 8,
+      "tc": 1,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 1,
+      "fc": 0,
+      "tr": 1,
+      "tc": 3,
+      "captured": "G",
+      "side": "cho"
+    }
+  ],
+  "result": null,
+  "note": "",
+  "finalScore": {
+    "cho": 45,
+    "han": 55.5
+  }
+}

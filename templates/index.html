@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>장기 분석 엔진</title>
+<style>
+  :root { --line:#6B4F2A; --bg:#E8C98A; }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+         margin: 0; padding: 1.5rem 1rem; background:#faf7f0; color:#222; }
+  .wrap { max-width: 520px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; font-weight: 600; margin: 0 0 1rem; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
+  label { font-size: 13px; color:#555; }
+  select, button { font: inherit; padding: 8px 12px; border-radius: 8px;
+                   border:1px solid #ccc; background:#fff; cursor:pointer; }
+  button.primary { border:2px solid #1565C0; }
+  button.cho { border-color:#1565C0; color:#1565C0; }
+  button.han { border-color:#C0392B; color:#C0392B; }
+  button.warn { border-color:#999; color:#444; }
+  #status { font-size: 14px; color:#555; margin: 8px 0; min-height: 20px; }
+  canvas { background: var(--bg); border-radius: 8px; max-width:100%; touch-action:none; display:block; margin:0 auto; }
+  #result { margin-top: 12px; padding: 12px 14px; background:#f1efe8; border-radius:8px;
+            font-size: 14px; display:block; min-height: 132px; box-sizing: border-box; }
+  .cap { color:#C0392B; }
+  .scorebar { display:flex; justify-content:space-between; align-items:center;
+              margin: 10px 0; padding: 10px 12px; background:#f1efe8; border-radius:8px; font-size:14px; }
+  .scorebar b.cho { color:#1565C0; }
+  .scorebar b.han { color:#C0392B; }
+  .moveinfo { font-size:13px; color:#666; }
+  #judge { margin-top:12px; padding:14px; border-radius:8px; font-size:15px; display:none;
+           text-align:center; font-weight:600; }
+  #judge.cho { background:#E3F2FD; color:#1565C0; }
+  #judge.han { background:#FBE9E7; color:#C0392B; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>장기 분석 엔진</h1>
+
+  <div id="setup">
+    <div class="row">
+      <label>초(파랑) 포진</label>
+      <select id="choForm">
+        <option value="msm_s">마상상마</option><option value="smsm">상마상마</option>
+        <option value="msms">마상마상</option><option value="smms">상마마상</option>
+      </select>
+      <label>한(빨강) 포진</label>
+      <select id="hanForm">
+        <option value="msm_s">마상상마</option><option value="smsm">상마상마</option>
+        <option value="msms">마상마상</option><option value="smms">상마마상</option>
+      </select>
+    </div>
+    <div class="row">
+      <label>내가 둘 쪽</label>
+      <select id="mySideSel">
+        <option value="cho">초 (파랑)</option>
+        <option value="han">한 (빨강)</option>
+      </select>
+      <span style="color:#888;font-size:13px;">선택한 쪽이 아래(6시)에 오고, 그 쪽 차례에만 추천 수가 표시됩니다.</span>
+    </div>
+    <div class="row">
+      <button class="primary" id="startBtn">분석 시작</button>
+    </div>
+  </div>
+
+  <div id="game" style="display:none;">
+    <div class="row">
+      <label>분석 시간</label>
+      <select id="time">
+        <option value="2">빠름 (깊이5)</option>
+        <option value="4" selected>표준 (깊이6, 권장)</option>
+        <option value="6">깊게 (깊이7, 느림)</option>
+      </select>
+      <button id="flipBtn">판 뒤집기</button>
+      <button id="undoBtn">한수 무르기</button>
+      <button id="passBtn">한수 쉼</button>
+      <button class="warn" id="newBtn">처음으로 (새 게임)</button>
+    </div>
+
+    <div class="row">
+      <label><input type="checkbox" id="autoChk" checked /> 자동 분석 (수를 둘 때마다 최선 수 표시)</label>
+    </div>
+    <div class="row">
+      <button id="saveBtn">기보 저장</button>
+      <button id="loadBtn">기보 불러오기</button>
+      <input type="file" id="loadFile" accept="application/json,.json" style="display:none" />
+    </div>
+
+    <div class="scorebar">
+      <span><b class="cho">초</b> <span id="choScore">0</span>점</span>
+      <span class="moveinfo">수: <span id="moveCount">0</span> / 200</span>
+      <span><b class="han">한</b> <span id="hanScore">0</span>점 <small>(덤 1.5 포함)</small></span>
+    </div>
+
+    <div id="status">기물을 옮기며 국면을 만들고, 최선 수 버튼으로 분석하세요.</div>
+    <canvas id="board" width="450" height="500"></canvas>
+
+    <div class="row" style="margin-top:12px;">
+      <button class="cho" id="anaCho" style="flex:1;">초(파랑) 최선 수</button>
+      <button class="han" id="anaHan" style="flex:1;">한(빨강) 최선 수</button>
+    </div>
+    <div class="row">
+      <button id="judgeBtn" style="flex:1;">점수 판정 (승부 확인)</button>
+    </div>
+    <div id="result"></div>
+    <div id="judge"></div>
+  </div>
+</div>
+
+<script>
+const ROWS=10, COLS=9, M=25, MOVE_LIMIT=200;
+const cvs=document.getElementById('board'), ctx=cvs.getContext('2d');
+const CW=(450-2*M)/(COLS-1), CH=(500-2*M)/(ROWS-1);
+const NAMES={ h:{K:'漢',C:'車',P:'包',M:'馬',S:'象',G:'士',J:'兵'},
+             c:{K:'楚',C:'車',P:'砲',M:'馬',S:'象',G:'士',J:'卒'} };
+const FULL={K:'궁',C:'차',P:'포',M:'마',S:'상',G:'사',J:'졸'};
+const POINTS={C:13,P:7,M:5,S:3,G:3,J:2,K:0};
+const HAN_BONUS=1.5;
+
+let board=null, flip=false, sel=null, hint=null, history=[], moveCount=0, gameOver=false, legalTargets=[];
+let mySide='cho';          // the side the player controls (shown at the bottom)
+let turn='cho';            // whose move it is (Cho moves first)
+let autoAnalyze=true;      // automatically show best move after each move
+let gibo=[];               // recorded moves for saving
+let choForm='msm_s', hanForm='msm_s';
+
+function toDisp(r,c){return flip?[ROWS-1-r,c]:[r,c];}
+function fromDisp(dr,dc){return flip?[ROWS-1-dr,dc]:[dr,dc];}
+function coord(r,c){const d=toDisp(r,c);return (d[1]+1)+'열 '+(d[0]+1)+'행';}
+
+async function api(path, body){
+  const res=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  return res.json();
+}
+
+function computeScores(){
+  let cho=0, han=0;
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
+    const cell=board[r][c]; if(!cell)continue;
+    if(cell[0]==='c') cho+=POINTS[cell[1]]; else han+=POINTS[cell[1]];
+  }
+  han+=HAN_BONUS;
+  return {cho, han};
+}
+
+function updateScoreBar(){
+  const s=computeScores();
+  document.getElementById('choScore').textContent=s.cho;
+  document.getElementById('hanScore').textContent=s.han.toFixed(1);
+  document.getElementById('moveCount').textContent=moveCount;
+}
+
+function draw(){
+  ctx.fillStyle='#E8C98A';ctx.fillRect(0,0,450,500);
+  ctx.strokeStyle='#6B4F2A';ctx.lineWidth=1;
+  for(let r=0;r<ROWS;r++){ctx.beginPath();ctx.moveTo(M,M+r*CH);ctx.lineTo(450-M,M+r*CH);ctx.stroke();}
+  for(let c=0;c<COLS;c++){ctx.beginPath();ctx.moveTo(M+c*CW,M);ctx.lineTo(M+c*CW,500-M);ctx.stroke();}
+  const pal=r0=>{ctx.beginPath();ctx.moveTo(M+3*CW,M+r0*CH);ctx.lineTo(M+5*CW,M+(r0+2)*CH);
+    ctx.moveTo(M+5*CW,M+r0*CH);ctx.lineTo(M+3*CW,M+(r0+2)*CH);ctx.stroke();};
+  pal(0);pal(7);
+  if(hint){const f=toDisp(hint.fr,hint.fc),t=toDisp(hint.tr,hint.tc);
+    const x1=M+f[1]*CW,y1=M+f[0]*CH,x2=M+t[1]*CW,y2=M+t[0]*CH;
+    ctx.strokeStyle='rgba(46,125,50,0.85)';ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+    const a=Math.atan2(y2-y1,x2-x1);ctx.fillStyle='rgba(46,125,50,0.85)';ctx.beginPath();
+    ctx.moveTo(x2,y2);ctx.lineTo(x2-12*Math.cos(a-0.4),y2-12*Math.sin(a-0.4));
+    ctx.lineTo(x2-12*Math.cos(a+0.4),y2-12*Math.sin(a+0.4));ctx.closePath();ctx.fill();}
+  if(sel){const s=toDisp(sel.r,sel.c);ctx.fillStyle='rgba(21,101,192,0.25)';
+    ctx.beginPath();ctx.arc(M+s[1]*CW,M+s[0]*CH,15,0,7);ctx.fill();
+    legalTargets.forEach(t=>{const d=toDisp(t.tr,t.tc);
+      ctx.fillStyle=t.captured?'rgba(192,57,43,0.5)':'rgba(21,101,192,0.45)';
+      ctx.beginPath();ctx.arc(M+d[1]*CW,M+d[0]*CH,6,0,7);ctx.fill();});}
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){const cell=board[r][c];if(!cell)continue;
+    const side=cell[0],kind=cell[1];const d=toDisp(r,c);const x=M+d[1]*CW,y=M+d[0]*CH;
+    ctx.beginPath();ctx.arc(x,y,17,0,7);
+    ctx.fillStyle=side==='h'?'#FBE9E7':'#E3F2FD';ctx.fill();ctx.lineWidth=2;
+    ctx.strokeStyle=side==='h'?'#C0392B':'#1565C0';ctx.stroke();
+    ctx.fillStyle=side==='h'?'#C0392B':'#1565C0';ctx.font='bold 17px serif';
+    ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(NAMES[side][kind],x,y+1);
+    if(POINTS[kind]>0){ctx.font='9px sans-serif';ctx.fillStyle=side==='h'?'#8a2a20':'#0d4a8a';
+      ctx.fillText(POINTS[kind], x+12, y+13);}
+  }
+}
+
+cvs.addEventListener('click', async e=>{
+  if(gameOver)return;
+  const rect=cvs.getBoundingClientRect();
+  const px=(e.clientX-rect.left)*(450/rect.width),py=(e.clientY-rect.top)*(500/rect.height);
+  let ddc=Math.round((px-M)/CW),ddr=Math.round((py-M)/CH);
+  if(ddr<0||ddr>=ROWS||ddc<0||ddc>=COLS)return;
+  const p=fromDisp(ddr,ddc), br=p[0], bc=p[1]; hint=null;
+
+  if(sel){
+    // Only allow moving to a legal target square.
+    const mv=legalTargets.find(t=>t.tr===br&&t.tc===bc);
+    if(mv){
+      const movedSide=board[sel.r][sel.c][0]==='c'?'cho':'han';
+      history.push({board:JSON.parse(JSON.stringify(board)), moveCount, turn, gibo:gibo.slice()});
+      // record the move into the gibo
+      gibo.push({fr:sel.r, fc:sel.c, tr:br, tc:bc, captured:mv.captured, side:movedSide});
+      board[br][bc]=board[sel.r][sel.c];board[sel.r][sel.c]=null;
+      moveCount++;
+      // next turn is the other side
+      turn = movedSide==='cho' ? 'han' : 'cho';
+      sel=null;legalTargets=[];
+      resultPlaceholder('대기 중');
+      updateScoreBar();
+      checkMoveLimit();
+      draw();
+      if(!gameOver){
+        if(autoAnalyze){ maybeAutoAnalyze(); }
+        else { document.getElementById('status').textContent=(turn==='cho'?'초':'한')+' 차례입니다.'; }
+      }
+      return;
+    }
+    // Clicking elsewhere: deselect, or select another own-side piece below.
+    sel=null;legalTargets=[];
+  }
+
+  // Select a piece — but only one belonging to the side whose turn it is,
+  // so turns always alternate correctly (prevents one side moving twice).
+  if(board[br][bc]){
+    const pieceSide = board[br][bc][0]==='c' ? 'cho' : 'han';
+    if(pieceSide !== turn){
+      sel=null;legalTargets=[];
+      document.getElementById('status').textContent=
+        (turn==='cho'?'초(파랑)':'한(빨강)')+' 차례입니다. '+
+        (turn==='cho'?'파란':'빨간')+' 기물을 선택하세요.';
+      draw();
+      return;
+    }
+    sel={r:br,c:bc};legalTargets=[];draw();
+    const res=await api('/api/legal',{fr:br, fc:bc, history:gibo,
+                                      cho_formation:choForm, han_formation:hanForm});
+    // Guard against the selection having changed while waiting.
+    if(sel && sel.r===br && sel.c===bc){
+      legalTargets=res.moves||[];
+      if(legalTargets.length===0)
+        document.getElementById('status').textContent='이 기물은 둘 수 있는 수가 없습니다.';
+      draw();
+    }
+  } else {
+    draw();
+  }
+});
+
+function checkMoveLimit(){
+  if(moveCount>=MOVE_LIMIT){
+    gameOver=true;
+    showJudge('200수에 도달하여 자동 종료되었습니다. 점수로 승부를 가립니다.');
+    document.getElementById('status').textContent='게임 종료 (200수 도달).';
+  }
+}
+
+function showJudge(prefix){
+  const s=computeScores();
+  const jd=document.getElementById('judge');
+  const winner = s.cho>s.han?'cho':'han';
+  const wName = winner==='cho'?'초(파랑)':'한(빨강)';
+  const margin = Math.abs(s.cho-s.han).toFixed(1);
+  jd.className=winner;
+  jd.style.display='block';
+  jd.innerHTML=(prefix?prefix+'<br>':'')+
+    '초 '+s.cho+'점 vs 한 '+s.han.toFixed(1)+'점<br>'+
+    '\u{1F3C6} '+wName+' 승 ('+margin+'점 차)';
+}
+
+// Auto-analyze, but only for the player's own side. The opponent's
+// recommendation is intentionally never shown.
+function maybeAutoAnalyze(){
+  if(!autoAnalyze || gameOver) return false;
+  if(turn!==mySide){
+    const oppName = turn==='cho'?'초(파랑)':'한(빨강)';
+    document.getElementById('status').textContent=oppName+' 차례입니다. (상대 차례)';
+    // Keep the result box visible (don't collapse it) so the layout below does
+    // not jump every half-move. Show a neutral placeholder at the same size.
+    const rd=document.getElementById('result');
+    rd.style.display='block';
+    rd.innerHTML='<div style="height:30px;margin-bottom:8px;display:flex;align-items:center;'+
+      'padding:0 10px;border-radius:6px;font-weight:600;font-size:13px;background:#eee;color:#777;">'+
+      '\u23F3 상대('+oppName+') 차례</div>'+
+      '<div style="color:#999;font-size:13px;">상대가 두면 다시 분석합니다.</div>';
+    hint=null; draw();
+    return false;
+  }
+  analyze(turn, true);
+  return true;
+}
+
+// Show a neutral placeholder in the result box WITHOUT hiding it, so the box
+// always occupies the same space and the layout never shakes.
+function resultPlaceholder(msg){
+  const rd=document.getElementById('result');
+  rd.style.display='block';
+  rd.innerHTML='<div style="height:30px;margin-bottom:8px;display:flex;align-items:center;'+
+    'padding:0 10px;border-radius:6px;font-weight:600;font-size:13px;background:#eee;color:#777;">'+
+    (msg||'대기 중')+'</div>'+
+    '<div style="color:#999;font-size:13px;">분석하면 추천 수가 여기에 표시됩니다.</div>';
+}
+
+async function analyze(sideStr, auto){
+  if(gameOver)return;
+  if(!auto){ sel=null; legalTargets=[]; }
+  hint=null;draw();
+  const t=parseFloat(document.getElementById('time').value);
+  const name=sideStr==='cho'?'초(파랑)':'한(빨강)';
+  document.getElementById('status').textContent=(auto?(name+' 차례 — '):'')+'수읽기 중...';
+  resultPlaceholder(name+' 수읽기 중...');
+  const res=await api('/api/analyze',{board, side:sideStr, time:t,
+                                      history:gibo, cho_formation:choForm, han_formation:hanForm});
+  const rd=document.getElementById('result');
+  if(res.error){rd.style.display='block';rd.textContent='오류: '+res.error;
+    document.getElementById('status').textContent='';return;}
+  if(!res.move){rd.style.display='block';rd.innerHTML='<b>'+name+'</b> — 둘 수 있는 수가 없습니다.';
+    document.getElementById('status').textContent='';return;}
+  hint=res.move;draw();
+  document.getElementById('status').textContent=(auto?(name+' 추천 수를 화살표로 표시했습니다.'):'분석 완료.');
+  const cell=board[res.move.fr][res.move.fc];
+  const kind=cell?cell[1]:'?';
+  const adv=res.score;
+  // Status banner: ALWAYS shown, in all four states (including a calm green
+  // "안정" when the engine sees no danger). Because it is always present and
+  // always the same size, it never appears/disappears and the layout cannot
+  // shake — only its colour and text change.
+  const styles={
+    critical:'background:#b71c1c;color:#fff;',
+    bad:'background:#e65100;color:#fff;',
+    warn:'background:#f9a825;color:#222;',
+    ok:'background:#e8f0e8;color:#2e5d34;'
+  };
+  const lvl=(res.danger&&res.danger.level)?res.danger.level:'ok';
+  const txt=(lvl==='ok')?'안정 — 위협 없음':(res.danger.text||'');
+  const icon=(lvl==='ok')?'\u2713':'\u26A0';
+  const dangerHtml='<div style="height:30px;margin-bottom:8px;display:flex;align-items:center;'+
+    'padding:0 10px;border-radius:6px;font-weight:600;font-size:13px;'+
+    (styles[lvl]||styles.ok)+'">'+icon+' '+txt+'</div>';
+  rd.style.display='block';
+  if(res.fromBook){
+    rd.innerHTML=dangerHtml+'<div style="font-weight:600;margin-bottom:6px;">'+name+' 추천 수 '+
+      '<span style="font-size:12px;color:#1565C0;border:1px solid #1565C0;border-radius:6px;padding:1px 6px;margin-left:4px;">정석(기보)</span></div>'+
+      '<div><b>'+FULL[kind]+'</b> : '+coord(res.move.fr,res.move.fc)+' \u2192 '+coord(res.move.tr,res.move.tc)+
+      (res.move.captured?(' <span class="cap">('+FULL[res.move.captured]+' 잡음)</span>'):'')+'</div>'+
+      '<div style="margin-top:6px;color:#666;font-size:13px;">이전 기보에서 검증된 수입니다 (계산 없이 즉시 추천).</div>';
+  } else {
+    rd.innerHTML=dangerHtml+'<div style="font-weight:600;margin-bottom:6px;">'+name+' 추천 수</div>'+
+      '<div><b>'+FULL[kind]+'</b> : '+coord(res.move.fr,res.move.fc)+' \u2192 '+coord(res.move.tr,res.move.tc)+
+      (res.move.captured?(' <span class="cap">('+FULL[res.move.captured]+' 잡음)</span>'):'')+'</div>'+
+      '<div style="margin-top:6px;color:#666;font-size:13px;">평가 '+(adv>0?'+':'')+(adv/100).toFixed(1)+
+      ' \u00b7 깊이 '+res.depthReached+' \u00b7 '+res.nodes.toLocaleString()+' 노드</div>'+
+      '<div style="margin-top:4px;color:#999;font-size:12px;">초록 화살표가 추천 수입니다.</div>';
+  }
+}
+
+function startGame(){
+  const cho=document.getElementById('choForm').value, han=document.getElementById('hanForm').value;
+  mySide=document.getElementById('mySideSel').value;
+  return api('/api/new',{cho,han}).then(res=>{
+    board=res.board;history=[];sel=null;hint=null;moveCount=0;gameOver=false;legalTargets=[];
+    // CHO sits at the bottom internally; if the player is HAN, flip the board
+    // so the player's own pieces appear at the bottom (6 o'clock).
+    flip=(mySide==='han');
+    turn='cho';gibo=[];choForm=cho;hanForm=han;
+    document.getElementById('setup').style.display='none';
+    document.getElementById('game').style.display='block';
+    resultPlaceholder('대기 중');
+    document.getElementById('judge').style.display='none';
+    document.getElementById('status').textContent='초 차례입니다. 기물을 눌러 두세요.';
+    updateScoreBar();draw();
+    // If the player is HAN, CHO (opponent) moves first; no recommendation is
+    // shown for the opponent. The player will get a recommendation when it is
+    // their turn.
+  });
+}
+
+document.getElementById('startBtn').onclick=startGame;
+document.getElementById('anaCho').onclick=()=>analyze('cho',false);
+document.getElementById('anaHan').onclick=()=>analyze('han',false);
+document.getElementById('judgeBtn').onclick=()=>showJudge('');
+document.getElementById('autoChk').onchange=e=>{autoAnalyze=e.target.checked;};
+document.getElementById('flipBtn').onclick=()=>{flip=!flip;sel=null;legalTargets=[];draw();};
+document.getElementById('undoBtn').onclick=()=>{
+  if(history.length){const prev=history.pop();board=prev.board;moveCount=prev.moveCount;
+    turn=prev.turn;gibo=prev.gibo;
+    sel=null;hint=null;gameOver=false;legalTargets=[];
+    resultPlaceholder('대기 중');
+    document.getElementById('judge').style.display='none';
+    document.getElementById('status').textContent=(turn==='cho'?'초':'한')+' 차례입니다.';
+    updateScoreBar();draw();}};
+document.getElementById('passBtn').onclick=()=>{
+  if(gameOver) return;
+  // "한수 쉼": give the turn to the other side without moving. Snapshot first
+  // so it can be undone like a normal move.
+  history.push({board:JSON.parse(JSON.stringify(board)), moveCount, turn, gibo:gibo.slice()});
+  turn = (turn==='cho') ? 'han' : 'cho';
+  sel=null;hint=null;legalTargets=[];
+  resultPlaceholder('대기 중');
+  draw();
+  if(autoAnalyze){ maybeAutoAnalyze(); }
+  else {
+    document.getElementById('status').textContent=
+      (turn==='cho'?'초(파랑)':'한(빨강)')+' 차례입니다. (한수 쉼)';
+  }
+};
+document.getElementById('newBtn').onclick=()=>{
+  document.getElementById('game').style.display='none';
+  document.getElementById('setup').style.display='block';
+  document.getElementById('judge').style.display='none';
+};
+
+// ---- gibo (game record) save / load ----
+document.getElementById('saveBtn').onclick=()=>{
+  const s=computeScores();
+  const record={
+    version:1, cho_formation:choForm, han_formation:hanForm,
+    moves:gibo, result:null, note:'',
+    finalScore:{cho:s.cho, han:s.han}
+  };
+  const blob=new Blob([JSON.stringify(record,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  const ts=new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+  a.href=url;a.download='janggi-gibo-'+ts+'.json';a.click();
+  URL.revokeObjectURL(url);
+};
+document.getElementById('loadBtn').onclick=()=>document.getElementById('loadFile').click();
+document.getElementById('loadFile').onchange=e=>{
+  const file=e.target.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      const rec=JSON.parse(reader.result);
+      choForm=rec.cho_formation||'msm_s';hanForm=rec.han_formation||'msm_s';
+      // rebuild from the starting position by replaying recorded moves
+      api('/api/new',{cho:choForm,han:hanForm}).then(res=>{
+        board=res.board;history=[];sel=null;hint=null;flip=(mySide==='han');
+        gameOver=false;legalTargets=[];turn='cho';gibo=[];moveCount=0;
+        (rec.moves||[]).forEach(m=>{
+          board[m.tr][m.tc]=board[m.fr][m.fc];board[m.fr][m.fc]=null;
+          gibo.push(m);moveCount++;turn=m.side==='cho'?'han':'cho';
+        });
+        document.getElementById('setup').style.display='none';
+        document.getElementById('game').style.display='block';
+        resultPlaceholder('대기 중');
+        document.getElementById('judge').style.display='none';
+        document.getElementById('status').textContent='기보를 불러왔습니다 ('+moveCount+'수). '+(turn==='cho'?'초':'한')+' 차례.';
+        updateScoreBar();draw();
+        if(autoAnalyze && !gameOver) maybeAutoAnalyze();
+      });
+    }catch(err){ alert('기보 파일을 읽을 수 없습니다: '+err.message); }
+  };
+  reader.readAsText(file);
+  e.target.value='';  // allow re-loading the same file
+};
+</script>
+</body>
+</html>

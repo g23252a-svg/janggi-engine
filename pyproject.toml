@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "janggi-engine"
+version = "0.1.0"
+description = "A Korean chess (Janggi) engine with alpha-beta, iterative deepening, transposition tables, and quiescence search."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[tool.setuptools.packages.find]
+include = ["janggi*"]

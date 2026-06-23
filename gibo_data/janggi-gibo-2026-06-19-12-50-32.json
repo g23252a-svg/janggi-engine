@@ -1,0 +1,269 @@
+{
+  "version": 1,
+  "cho_formation": "smsm",
+  "han_formation": "msm_s",
+  "moves": [
+    {
+      "fr": 6,
+      "fc": 0,
+      "tr": 6,
+      "tc": 1,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 1,
+      "fc": 4,
+      "tr": 2,
+      "tc": 5,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 9,
+      "fc": 7,
+      "tr": 7,
+      "tc": 6,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 2,
+      "fc": 1,
+      "tr": 2,
+      "tc": 6,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 9,
+      "fc": 0,
+      "tr": 8,
+      "tc": 0,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 2,
+      "fc": 6,
+      "tr": 6,
+      "tc": 6,
+      "captured": "J",
+      "side": "han"
+    },
+    {
+      "fr": 6,
+      "fc": 4,
+      "tr": 6,
+      "tc": 5,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 6,
+      "fc": 6,
+      "tr": 2,
+      "tc": 6,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 7,
+      "fc": 7,
+      "tr": 7,
+      "tc": 5,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 3,
+      "fc": 4,
+      "tr": 3,
+      "tc": 5,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 9,
+      "fc": 2,
+      "tr": 7,
+      "tc": 3,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 2,
+      "fc": 6,
+      "tr": 7,
+      "tc": 6,
+      "captured": "M",
+      "side": "han"
+    },
+    {
+      "fr": 7,
+      "fc": 1,
+      "tr": 7,
+      "tc": 4,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 0,
+      "fc": 5,
+      "tr": 1,
+      "tc": 5,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 6,
+      "fc": 5,
+      "tr": 6,
+      "tc": 4,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 3,
+      "fc": 5,
+      "tr": 3,
+      "tc": 4,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 6,
+      "fc": 4,
+      "tr": 6,
+      "tc": 5,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 3,
+      "fc": 4,
+      "tr": 3,
+      "tc": 5,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 7,
+      "fc": 3,
+      "tr": 5,
+      "tc": 4,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 2,
+      "fc": 7,
+      "tr": 2,
+      "tc": 4,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 6,
+      "fc": 5,
+      "tr": 6,
+      "tc": 6,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 2,
+      "fc": 5,
+      "tr": 1,
+      "tc": 4,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 9,
+      "fc": 8,
+      "tr": 9,
+      "tc": 7,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 3,
+      "fc": 5,
+      "tr": 4,
+      "tc": 5,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 9,
+      "fc": 7,
+      "tr": 1,
+      "tc": 7,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 0,
+      "fc": 6,
+      "tr": 3,
+      "tc": 4,
+      "captured": null,
+      "side": "han"
+    },
+    {
+      "fr": 1,
+      "fc": 7,
+      "tr": 1,
+      "tc": 6,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 2,
+      "fc": 4,
+      "tr": 5,
+      "tc": 4,
+      "captured": "M",
+      "side": "han"
+    },
+    {
+      "fr": 9,
+      "fc": 1,
+      "tr": 6,
+      "tc": 3,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 3,
+      "fc": 4,
+      "tr": 6,
+      "tc": 6,
+      "captured": "J",
+      "side": "han"
+    },
+    {
+      "fr": 1,
+      "fc": 6,
+      "tr": 2,
+      "tc": 6,
+      "captured": null,
+      "side": "cho"
+    },
+    {
+      "fr": 0,
+      "fc": 7,
+      "tr": 2,
+      "tc": 6,
+      "captured": "C",
+      "side": "han"
+    }
+  ],
+  "result": null,
+  "note": "",
+  "finalScore": {
+    "cho": 45,
+    "han": 73.5
+  }
+}
