@@ -180,8 +180,14 @@ class Engine:
         scored: list[tuple[int, Move]] = []
         for mv in moves:
             board.make(mv)
-            score = -self._negamax(board, -side, depth - 1, -beta, -alpha)
-            board.unmake()
+            try:
+                score = -self._negamax(board, -side, depth - 1, -beta, -alpha)
+                # Root material-risk penalty:
+                # If this candidate leaves chariot/cannon/horse/elephant/guard
+                # capturable by a favorable SEE, discount it immediately.
+                score -= self._root_material_risk(board, side)
+            finally:
+                board.unmake()
             scored.append((score, mv))
             if score > best_score:
                 best_score = score
@@ -204,59 +210,60 @@ class Engine:
             return best_score, guarded, order
         return best_score, best_move, order
 
+    def _root_material_risk(self, board: Board, side: int) -> int:
+        """Penalty for material the opponent can immediately win after a root move.
+
+        This is intentionally root-only. It is stronger than the old max-only
+        blunder guard because real losses often come from several loose pieces
+        or from one exchange that leaves another major piece hanging.
+        """
+        enemy = -side
+        worst = 0
+        total = 0
+        count = 0
+
+        for omv in board.generate_pseudo(enemy):
+            if omv.captured not in ("C", "P", "M", "S", "G"):
+                continue
+            gain = see(board, omv)
+            if gain <= 0:
+                continue
+            worst = max(worst, gain)
+            total += gain
+            count += 1
+
+        if worst < 250:
+            return 0
+
+        # Worst immediate win matters most, but multiple loose pieces also matter.
+        return min(1200, worst + total // 4 + count * 40)
+
     def _blunder_guard(
         self, board: Board, side: int, scored: list[tuple[int, Move]], best_score: int
     ) -> Move | None:
-        """Return a safer root move when the searched best move hangs material.
-
-        v2: the old guard only allowed a fixed 120cp score margin and inspected
-        five alternatives. That was too timid for real games where the engine
-        could prefer activity while leaving a chariot/cannon/horse to be won on
-        the next move. For large SEE losses, allow a wider dynamic margin and
-        scan more near-top alternatives.
-        """
+        """Return a safer root move if the top move leaves major material loose."""
         if len(scored) < 2:
             return None
 
         scored.sort(key=lambda sm: sm[0], reverse=True)
         top_score, top_move = scored[0]
 
-        def hangs_value(mv: Move) -> int:
+        def risk_after(mv: Move) -> int:
             board.make(mv)
             try:
-                worst = 0
-                enemy = -side
-                for omv in board.generate_pseudo(enemy):
-                    # Root safety is about preventing major material giveaways.
-                    if omv.captured in ("C", "P", "M", "S", "G"):
-                        gain = see(board, omv)
-                        if gain > worst:
-                            worst = gain
-                return worst
+                return self._root_material_risk(board, side)
             finally:
                 board.unmake()
 
-        top_hang = hangs_value(top_move)
-        if top_hang < 250:
+        top_risk = risk_after(top_move)
+        if top_risk < 250:
             return None
 
-        # Dynamic margin:
-        # - small tactical risk: stay conservative
-        # - cannon/horse/chariot-sized risk: accept a larger eval drop to avoid
-        #   immediately losing material beyond the horizon.
-        margin = max(160, min(900, (top_hang * 3) // 5))
-
-        # How much safer an alternative must be before replacing the top move.
-        # For a chariot-sized hang, do not require a huge safety gap; avoiding
-        # the blunder is already worth it.
-        required_improvement = 120 if top_hang >= 700 else 180
-
+        margin = max(180, min(1000, top_risk))
         for sc, mv in scored[1:12]:
             if top_score - sc > margin:
                 break
-
-            alt_hang = hangs_value(mv)
-            if alt_hang + required_improvement < top_hang:
+            if risk_after(mv) + 180 < top_risk:
                 return mv
 
         return None
