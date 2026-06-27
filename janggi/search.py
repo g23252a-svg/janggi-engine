@@ -199,16 +199,78 @@ class Engine:
         scored.sort(key=lambda sm: sm[0], reverse=True)
         order = [mv for _, mv in scored]
 
-        # --- Root-only blunder guard --------------------------------------
-        # The chosen move is fully searched, but the horizon can still miss that
-        # it leaves a valuable piece (chariot/cannon/horse/elephant) hanging
-        # just beyond the last ply. Cheaply (root only, NOT per leaf) check
-        # whether the best move lets the opponent win material by SEE; if so and
-        # a near-equal alternative does not, prefer the safe alternative.
+        # --- Root-only tactical guards ------------------------------------
+        # First avoid a top move that allows immediate one-move checkmate.
+        # This guard is intentionally post-root and best-move-first only, so it
+        # does not multiply legal_moves() across every search node.
+        mate_guarded = self._mate_threat_guard(board, side, scored)
+        if mate_guarded is not None:
+            return best_score, mate_guarded, order
+
+        # Then avoid a top move that leaves major material loose.
         guarded = self._blunder_guard(board, side, scored, best_score)
         if guarded is not None:
             return best_score, guarded, order
         return best_score, best_move, order
+
+    def _allows_immediate_mate(self, board: Board, side: int) -> bool:
+        """Return True if the opponent has an immediate legal mate.
+
+        Fast v2-lite:
+        - scan opponent pseudo moves
+        - verify opponent move legality after make
+        - only call legal_moves(side) when the move actually gives check
+        - cap inspected checking moves to keep web move time stable
+        """
+        enemy = -side
+        checked_checks = 0
+
+        for omv in board.generate_pseudo(enemy):
+            board.make(omv)
+            try:
+                if board.in_check(enemy):
+                    continue
+
+                if not board.in_check(side):
+                    continue
+
+                checked_checks += 1
+                if not board.legal_moves(side):
+                    return True
+
+                if checked_checks >= 4:
+                    return False
+            finally:
+                board.unmake()
+
+        return False
+
+    def _mate_threat_guard(self, board: Board, side: int, scored: list[tuple[int, Move]]) -> Move | None:
+        """Replace the top root move only if it allows immediate mate."""
+        if len(scored) < 2:
+            return None
+
+        scored.sort(key=lambda sm: sm[0], reverse=True)
+        top_score, top_move = scored[0]
+
+        def unsafe_after(mv: Move) -> bool:
+            board.make(mv)
+            try:
+                return self._allows_immediate_mate(board, side)
+            finally:
+                board.unmake()
+
+        if not unsafe_after(top_move):
+            return None
+
+        margin = 900
+        for sc, mv in scored[1:8]:
+            if top_score - sc > margin:
+                break
+            if not unsafe_after(mv):
+                return mv
+
+        return None
 
     def _root_material_risk(self, board: Board, side: int) -> int:
         """Penalty for material the opponent can immediately win after a root move.
