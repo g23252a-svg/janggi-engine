@@ -207,36 +207,60 @@ class Engine:
     def _blunder_guard(
         self, board: Board, side: int, scored: list[tuple[int, Move]], best_score: int
     ) -> Move | None:
-        """Return a safer root move if the top move hangs material and a nearly
-        as-good move does not; otherwise None (keep the original best)."""
+        """Return a safer root move when the searched best move hangs material.
+
+        v2: the old guard only allowed a fixed 120cp score margin and inspected
+        five alternatives. That was too timid for real games where the engine
+        could prefer activity while leaving a chariot/cannon/horse to be won on
+        the next move. For large SEE losses, allow a wider dynamic margin and
+        scan more near-top alternatives.
+        """
         if len(scored) < 2:
             return None
+
         scored.sort(key=lambda sm: sm[0], reverse=True)
         top_score, top_move = scored[0]
 
         def hangs_value(mv: Move) -> int:
             board.make(mv)
-            worst = 0
-            enemy = -side
-            for omv in board.generate_pseudo(enemy):
-                if omv.captured in ("C", "P", "M", "S"):
-                    g = see(board, omv)
-                    if g > worst:
-                        worst = g
-            board.unmake()
-            return worst
+            try:
+                worst = 0
+                enemy = -side
+                for omv in board.generate_pseudo(enemy):
+                    # Root safety is about preventing major material giveaways.
+                    if omv.captured in ("C", "P", "M", "S", "G"):
+                        gain = see(board, omv)
+                        if gain > worst:
+                            worst = gain
+                return worst
+            finally:
+                board.unmake()
 
-        if hangs_value(top_move) < 300:
-            return None  # top move doesn't give anything significant away
         top_hang = hangs_value(top_move)
+        if top_hang < 250:
+            return None
 
-        MARGIN = 120  # don't trade meaningful eval for safety
-        for sc, mv in scored[1:6]:
-            if top_score - sc > MARGIN:
+        # Dynamic margin:
+        # - small tactical risk: stay conservative
+        # - cannon/horse/chariot-sized risk: accept a larger eval drop to avoid
+        #   immediately losing material beyond the horizon.
+        margin = max(160, min(900, (top_hang * 3) // 5))
+
+        # How much safer an alternative must be before replacing the top move.
+        # For a chariot-sized hang, do not require a huge safety gap; avoiding
+        # the blunder is already worth it.
+        required_improvement = 120 if top_hang >= 700 else 180
+
+        for sc, mv in scored[1:12]:
+            if top_score - sc > margin:
                 break
-            if hangs_value(mv) + 200 < top_hang:
+
+            alt_hang = hangs_value(mv)
+            if alt_hang + required_improvement < top_hang:
                 return mv
+
         return None
+
 
     def _negamax(self, board: Board, side: int, depth: int, alpha: int, beta: int) -> int:
         self.stats.nodes += 1
