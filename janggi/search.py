@@ -182,9 +182,10 @@ class Engine:
             board.make(mv)
             try:
                 score = -self._negamax(board, -side, depth - 1, -beta, -alpha)
-                # Root material-risk penalty:
-                # If this candidate leaves chariot/cannon/horse/elephant/guard
-                # capturable by a favorable SEE, discount it immediately.
+                # Root mate/material-risk penalties:
+                # Do not allow a root move that lets the opponent force an
+                # immediate checkmate/net, even if shallow eval likes activity.
+                score -= self._root_mate_risk(board, side)
                 score -= self._root_material_risk(board, side)
             finally:
                 board.unmake()
