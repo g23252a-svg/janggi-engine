@@ -185,6 +185,7 @@ class Engine:
                 # Root material-risk penalty:
                 # If this candidate leaves chariot/cannon/horse/elephant/guard
                 # capturable by a favorable SEE, discount it immediately.
+                score -= self._root_home_invasion_risk(board, side)
                 score -= self._root_material_risk(board, side)
             finally:
                 board.unmake()
@@ -271,6 +272,58 @@ class Engine:
                 return mv
 
         return None
+
+    def _root_home_invasion_risk(self, board: Board, side: int) -> int:
+        """Penalty for allowing immediate enemy chariot/cannon home-rank invasion.
+
+        This catches cases where the opponent does not immediately capture
+        material, but enters our back ranks with a line piece and threatens the
+        palace/guards next. It is root-only and uses pseudo moves, so it stays
+        much lighter than mate search.
+        """
+        enemy = -side
+        risk = 0
+
+        def in_our_home(r: int) -> bool:
+            if side == HAN:
+                return r <= 2
+            return r >= 7
+
+        for omv in board.generate_pseudo(enemy):
+            piece = board.grid[omv.fr][omv.fc]
+            if piece is None:
+                continue
+            kind, pside = piece
+            if pside != enemy or kind not in ("C", "P"):
+                continue
+
+            # Only care about new penetration into our home zone.
+            if in_our_home(omv.fr) or not in_our_home(omv.tr):
+                continue
+
+            # Chariot invasion is especially dangerous; cannon slightly less.
+            if kind == "C":
+                risk += 520
+            else:
+                risk += 360
+
+            # Extra penalty if it lands on back rank or near the palace files.
+            if side == HAN:
+                if omv.tr == 0:
+                    risk += 220
+            else:
+                if omv.tr == 9:
+                    risk += 220
+
+            if 3 <= omv.tc <= 5:
+                risk += 180
+
+            # If the invasion already captures something, material-risk will
+            # also catch it; still add a small tactical urgency bonus.
+            if omv.captured in ("G", "S", "M", "P", "C"):
+                risk += 180
+
+        return min(1400, risk)
 
     def _root_material_risk(self, board: Board, side: int) -> int:
         """Penalty for material the opponent can immediately win after a root move.
