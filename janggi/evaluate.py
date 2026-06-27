@@ -34,6 +34,12 @@ W_GUARD_COVER = 6
 W_CANNON_SCREEN = 15
 W_KING_PRESSURE = 18
 
+# In official Janggi scoring, the late game is decided by remaining material
+# points after the move limit. The normal evaluator already uses the same
+# material scale, but positional terms can still distract the engine in long
+# games. From the late middlegame onward, lock harder onto the actual score.
+W_ENDGAME_SCORE_LOCK = 2
+
 W_HANGING_UNDEFENDED = {"C": 360, "P": 260, "M": 190, "S": 130, "G": 90, "J": 25}
 W_HANGING_DEFENDED = {"C": 120, "P": 90, "M": 65, "S": 40, "G": 25, "J": 0}
 
@@ -119,6 +125,7 @@ def _cannon_has_screen(board: Board, r: int, c: int) -> bool:
 
 def evaluate(board: Board, include_mobility: bool = True) -> int:
     score = 0
+    material_score = 0
     g = board.grid
     for r in range(ROWS):
         for c in range(COLS):
@@ -126,7 +133,9 @@ def evaluate(board: Board, include_mobility: bool = True) -> int:
             if p is None:
                 continue
             kind, side = p
-            v = PIECE_VALUE[kind]
+            base = PIECE_VALUE[kind]
+            material_score += base if side == HAN else -base
+            v = base
 
             if kind == "J":
                 adv = (r if side == HAN else (ROWS - 1 - r))
@@ -139,6 +148,16 @@ def evaluate(board: Board, include_mobility: bool = True) -> int:
                     v += W_CANNON_SCREEN
 
             score += v if side == HAN else -v
+
+    # Score-lock mode for long games. Board._history length is the played ply
+    # count in real games and also works inside search because make/unmake keeps
+    # it consistent. After 120 ply, preserving official material score matters
+    # more than activity or shape.
+    ply = len(getattr(board, "_history", ()))
+    if ply >= 120:
+        score += material_score * W_ENDGAME_SCORE_LOCK
+    elif ply >= 80:
+        score += material_score
 
     if include_mobility:
         mob = len(board.generate_pseudo(HAN)) - len(board.generate_pseudo(CHO))
