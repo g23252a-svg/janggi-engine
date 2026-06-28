@@ -179,9 +179,19 @@ class Engine:
         best_score = -MATE * 2
         scored: list[tuple[int, Move]] = []
         for mv in moves:
+            # Reward clearly favorable root captures before making the move.
+            # Example: cannon takes chariot, even if the cannon can be
+            # recaptured, is still a favorable exchange.
+            capture_credit = 0
+            if mv.captured in ("C", "P", "M", "S", "G"):
+                capture_gain = see(board, mv)
+                if capture_gain > 0:
+                    capture_credit = min(900, capture_gain)
+
             board.make(mv)
             try:
                 score = -self._negamax(board, -side, depth - 1, -beta, -alpha)
+                score += capture_credit
                 # Root material-risk penalty:
                 # If this candidate leaves chariot/cannon/horse/elephant/guard
                 # capturable by a favorable SEE, discount it immediately.
