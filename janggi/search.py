@@ -518,11 +518,16 @@ class Engine:
             total += gain
             count += 1
 
-        if worst < 250:
+        # Do not ignore "small" official-score losses.
+        # A cannon lost to a horse is only +200 in engine units, but it is still
+        # a real 2-point loss on the Janggi score sheet. Repeated 2~3 point leaks
+        # were enough to lose games even without a single huge blunder.
+        if worst < 180:
             return 0
 
         # Worst immediate win matters most, but multiple loose pieces also matter.
-        return min(1200, worst + total // 4 + count * 40)
+        # Make repeated medium leaks visible at root.
+        return min(1400, worst + total // 3 + count * 60)
 
     def _blunder_guard(
         self, board: Board, side: int, scored: list[tuple[int, Move]], best_score: int
@@ -542,14 +547,14 @@ class Engine:
                 board.unmake()
 
         top_risk = risk_after(top_move)
-        if top_risk < 250:
+        if top_risk < 180:
             return None
 
-        margin = max(180, min(1000, top_risk))
+        margin = max(150, min(1000, top_risk))
         for sc, mv in scored[1:12]:
             if top_score - sc > margin:
                 break
-            if risk_after(mv) + 180 < top_risk:
+            if risk_after(mv) + 120 < top_risk:
                 return mv
 
         return None
