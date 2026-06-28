@@ -125,6 +125,42 @@ let turn='cho';            // whose move it is (Cho moves first)
 let autoAnalyze=true;      // automatically show best move after each move
 let gibo=[];               // recorded moves for saving
 let choForm='msm_s', hanForm='msm_s';
+let audioCtx=null;
+let soundEnabled=true;
+
+function ensureAudio(){
+  if(!soundEnabled) return null;
+  const AC=window.AudioContext||window.webkitAudioContext;
+  if(!AC) return null;
+  if(!audioCtx) audioCtx=new AC();
+  if(audioCtx.state==='suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+function playTone(freq, duration, gainValue){
+  const ac=ensureAudio();
+  if(!ac) return;
+  const osc=ac.createOscillator();
+  const gain=ac.createGain();
+  osc.type='triangle';
+  osc.frequency.value=freq;
+  gain.gain.setValueAtTime(0.0001, ac.currentTime);
+  gain.gain.exponentialRampToValueAtTime(gainValue, ac.currentTime+0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime+duration);
+  osc.connect(gain);
+  gain.connect(ac.destination);
+  osc.start();
+  osc.stop(ac.currentTime+duration+0.02);
+}
+
+function playMoveSound(captured){
+  // Normal move: short wooden click. Capture: slightly stronger double click.
+  playTone(captured ? 520 : 420, 0.055, captured ? 0.055 : 0.035);
+  if(captured){
+    setTimeout(()=>playTone(300, 0.06, 0.04), 55);
+  }
+}
+
 
 function toDisp(r,c){return flip?[ROWS-1-r,c]:[r,c];}
 function fromDisp(dr,dc){return flip?[ROWS-1-dr,dc]:[dr,dc];}
@@ -200,6 +236,7 @@ cvs.addEventListener('click', async e=>{
       // record the move into the gibo
       gibo.push({fr:sel.r, fc:sel.c, tr:br, tc:bc, captured:mv.captured, side:movedSide});
       board[br][bc]=board[sel.r][sel.c];board[sel.r][sel.c]=null;
+      playMoveSound(!!mv.captured);
       moveCount++;
       // next turn is the other side
       turn = movedSide==='cho' ? 'han' : 'cho';
