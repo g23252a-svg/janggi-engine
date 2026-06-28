@@ -31,8 +31,8 @@ from janggi.book import load_book, book_move
 app = Flask(__name__)
 
 # Bound the work the public endpoint will do so a request cannot hang the dyno.
-MAX_TIME = 25.0
-MAX_DEPTH = 8
+MAX_TIME = 6.0
+MAX_DEPTH = 7
 
 # Opening book learned from recorded games (gibo). Loaded once at startup.
 _BOOK_PATH = os.path.join(os.path.dirname(__file__), "data", "opening_book.json")
@@ -96,27 +96,34 @@ def api_analyze():
 
     side = CHO if side_str == "cho" else HAN
 
-    # Deterministic, depth-first analysis. The game has a 5-minute main clock
-    # plus 30-second byo-yomi periods, so strength matters more than speed. We
-    # search to a FIXED target depth (not a wall-clock duration, which made the
-    # recommendation flicker run-to-run). With Late Move Reduction + root
-    # candidate narrowing, depth 6 now completes in ~10-15s even in heavy
-    # midgames (was ~30s before), so depth 6 is the new default. Depth 7 (~25-30s)
-    # is offered as a "deep" option for critical positions. The "time" knob is
-    # kept for compatibility and reinterpreted as a depth target.
-    requested = float(data.get("time", 5.0))
-    if requested <= 2.0:
+    # Live-game time manager.
+    # The app is being used in 5-minute + 30-second byo-yomi games. A 28-second
+    # search is too dangerous because network/input delay can lose on time. Use
+    # the request "time" value as an actual thinking-budget hint and keep the
+    # server safely below the byo-yomi limit.
+    try:
+        requested = float(data.get("time", 3.0))
+    except (TypeError, ValueError):
+        requested = 3.0
+
+    requested = max(0.5, min(requested, MAX_TIME))
+
+    if requested <= 1.5:
+        depth = 4
+        time_limit = 1.2
+    elif requested <= 3.0:
         depth = 5
-    elif requested <= 4.0:
-        depth = 6
+        time_limit = 2.2
     else:
-        depth = 7
-    if "depth" in data:  # explicit depth overrides the mapping
-        depth = int(data["depth"])
+        depth = 6
+        time_limit = 4.5
+
+    if "depth" in data:
+        # Explicit depth is allowed, but the time cap still wins.
+        depth = min(int(data["depth"]), MAX_DEPTH)
+
     depth = min(depth, MAX_DEPTH)
-    # Safety cap sized to the byo-yomi clock. Interrupted depths are discarded by
-    # the engine, so the result is always the last fully-searched depth.
-    time_limit = 28.0
+    time_limit = min(time_limit, MAX_TIME)
 
     board = json_to_board(grid)
     board.side_to_move = side
