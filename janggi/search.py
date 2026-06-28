@@ -196,6 +196,7 @@ class Engine:
                 # 1) do not allow enemy chariot/cannon invasion into our home zone
                 # 2) do not leave major material capturable
                 risk = self._root_home_invasion_risk(board, side)
+                risk += self._root_home_intruder_risk(board, side)
                 risk += self._root_material_risk(board, side)
                 risk += self._root_landing_recapture_risk(board, side, mv)
 
@@ -372,6 +373,76 @@ class Engine:
             worst = max(worst, penalty)
 
         return min(2200, worst)
+
+    def _root_home_intruder_risk(self, board: Board, side: int) -> int:
+        """Penalty for enemy chariot/cannon already active in our home zone.
+
+        _root_home_invasion_risk only catches new penetration. This catches the
+        worse follow-up pattern: an enemy line piece is already inside or near
+        our home area and keeps harvesting soldiers/guards/majors.
+        """
+        enemy = -side
+        risk = 0
+
+        def in_our_danger_zone(r: int) -> bool:
+            # Include the front home line too. Several losses came from enemy
+            # chariot/cannon sitting on the 6th/3rd rank and sweeping sideways.
+            if side == HAN:
+                return r <= 3
+            return r >= 6
+
+        for r in range(ROWS):
+            for c in range(COLS):
+                piece = board.grid[r][c]
+                if piece is None:
+                    continue
+                kind, pside = piece
+                if pside != enemy or kind not in ("C", "P"):
+                    continue
+                if not in_our_danger_zone(r):
+                    continue
+
+                # Existing enemy line piece in/near home is already dangerous.
+                if kind == "C":
+                    risk += 520
+                else:
+                    risk += 380
+
+                # Back rank and palace files are especially toxic.
+                if side == HAN:
+                    if r == 0:
+                        risk += 260
+                else:
+                    if r == 9:
+                        risk += 260
+
+                if 3 <= c <= 5:
+                    risk += 220
+
+                # Add urgency if this intruder has immediate captures.
+                for omv in board.generate_pseudo(enemy):
+                    if omv.fr != r or omv.fc != c:
+                        continue
+                    if omv.captured not in ("C", "P", "M", "S", "G", "J"):
+                        continue
+
+                    # Verify it is not an illegal self-checking capture.
+                    board.make(omv)
+                    try:
+                        if board.in_check(enemy):
+                            continue
+                    finally:
+                        board.unmake()
+
+                    captured_value = PIECE_VALUE.get(omv.captured, 0)
+                    if omv.captured in ("C", "P", "M"):
+                        risk += captured_value + 250
+                    elif omv.captured in ("S", "G"):
+                        risk += captured_value + 180
+                    else:
+                        risk += 120
+
+        return min(2600, risk)
 
     def _root_home_invasion_risk(self, board: Board, side: int) -> int:
         """Penalty for allowing immediate enemy chariot/cannon home-rank invasion.
