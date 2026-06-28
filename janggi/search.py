@@ -185,8 +185,21 @@ class Engine:
                 # Root material-risk penalty:
                 # If this candidate leaves chariot/cannon/horse/elephant/guard
                 # capturable by a favorable SEE, discount it immediately.
-                score -= self._root_home_invasion_risk(board, side)
-                score -= self._root_material_risk(board, side)
+                risk = self._root_material_risk(board, side)
+
+                # Winning-capture credit:
+                # If the root move captured a more valuable piece, do not
+                # over-penalize the moved piece merely because it can be
+                # recaptured. Example: cannon takes chariot, then horse takes
+                # cannon is still a favorable exchange.
+                if mv.captured:
+                    moved = board.grid[mv.tr][mv.tc]
+                    if moved is not None:
+                        gain_credit = PIECE_VALUE.get(mv.captured, 0) - PIECE_VALUE.get(moved[0], 0)
+                        if gain_credit > 0:
+                            risk = max(0, risk - gain_credit)
+
+                score -= risk
             finally:
                 board.unmake()
             scored.append((score, mv))
