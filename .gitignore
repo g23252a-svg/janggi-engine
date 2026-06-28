@@ -5,3 +5,14 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+
+# Training data & models (large, regenerable)
+data/*.jsonl
+data/*.log
+models/*.pt
+
+# NN experiment scripts (kept local, not for production)
+janggi/policy_*.py
+janggi/net_vs_net.py
+janggi/nn_match.py
+janggi/risk_ab.py

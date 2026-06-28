@@ -192,39 +192,8 @@ class Engine:
             try:
                 score = -self._negamax(board, -side, depth - 1, -beta, -alpha)
                 score += capture_credit
-                # Root tactical-risk penalty:
-                # 1) do not allow enemy chariot/cannon invasion into our home zone
-                # 2) do not leave major material capturable
-                risk = self._root_home_invasion_risk(board, side)
-                risk += self._root_home_intruder_risk(board, side)
-                risk += self._root_material_risk(board, side)
-                risk += self._root_landing_recapture_risk(board, side, mv)
-
-                moved = board.grid[mv.tr][mv.tc]
-                if mv.captured and moved is not None:
-                    captured_value = PIECE_VALUE.get(mv.captured, 0)
-                    moved_value = PIECE_VALUE.get(moved[0], 0)
-
-                    # Good exchange credit:
-                    # Example: cannon takes chariot, even if the cannon is later
-                    # recaptured, is still usually favorable.
-                    if captured_value > moved_value:
-                        risk = max(0, risk - (captured_value - moved_value))
-
-                    # Bad capture penalty:
-                    # Example from the loss: chariot takes guard, then immediately
-                    # gets captured. A high-value piece should not chase low-value
-                    # material into a direct recapture.
-                    elif moved_value - captured_value >= 400:
-                        enemy = -side
-                        for omv in board.generate_pseudo(enemy):
-                            if omv.tr == mv.tr and omv.tc == mv.tc and omv.captured == moved[0]:
-                                attacker = board.grid[omv.fr][omv.fc]
-                                if attacker is not None and attacker[1] == enemy:
-                                    risk += min(1200, moved_value - captured_value + 200)
-                                    break
-
-                score -= risk
+                # root risk guards removed: over-fit, weakened engine (verified 1:5 vs clean)
+                pass
             finally:
                 board.unmake()
             scored.append((score, mv))
