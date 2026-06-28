@@ -244,7 +244,7 @@ class Engine:
         - scan opponent pseudo moves
         - verify opponent move legality after make
         - only call legal_moves(side) when the move actually gives check
-        - cap inspected checking moves to keep web move time stable
+        - scan all checking moves; a low cap can miss chariot mate nets
         """
         enemy = -side
         checked_checks = 0
@@ -287,10 +287,9 @@ class Engine:
         if not unsafe_after(top_move):
             return None
 
-        margin = 900
-        for sc, mv in scored[1:8]:
-            if top_score - sc > margin:
-                break
+        # If the top move allows immediate mate, reject it regardless of
+        # eval margin. Being checkmated is worse than any static score.
+        for sc, mv in scored[1:16]:
             if not unsafe_after(mv):
                 return mv
 
