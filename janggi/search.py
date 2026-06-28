@@ -197,6 +197,7 @@ class Engine:
                 # 2) do not leave major material capturable
                 risk = self._root_home_invasion_risk(board, side)
                 risk += self._root_material_risk(board, side)
+                risk += self._root_landing_recapture_risk(board, side, mv)
 
                 moved = board.grid[mv.tr][mv.tc]
                 if mv.captured and moved is not None:
@@ -307,6 +308,70 @@ class Engine:
                 return mv
 
         return None
+
+    def _root_landing_recapture_risk(self, board: Board, side: int, mv: Move) -> int:
+        """Penalty when a major piece lands on a square where it is immediately lost.
+
+        This catches non-capturing blunders such as moving a chariot onto a file
+        where an enemy cannon can immediately take it. The existing bad-capture
+        guard only works when mv.captured is set; this one also covers quiet
+        moves into poisoned squares.
+        """
+        moved = board.grid[mv.tr][mv.tc]
+        if moved is None or moved[1] != side:
+            return 0
+
+        moved_kind = moved[0]
+        moved_value = PIECE_VALUE.get(moved_kind, 0)
+
+        # Only police important pieces. Soldiers/guards can be traded normally.
+        if moved_kind not in ("C", "P", "M", "S"):
+            return 0
+
+        captured_value = PIECE_VALUE.get(mv.captured, 0) if mv.captured else 0
+
+        # If the move already captured a more valuable piece, existing
+        # winning-capture credit handles it; do not double-punish good exchanges.
+        if captured_value >= moved_value:
+            return 0
+
+        enemy = -side
+        worst = 0
+
+        for omv in board.generate_pseudo(enemy):
+            if omv.tr != mv.tr or omv.tc != mv.tc:
+                continue
+            if omv.captured != moved_kind:
+                continue
+
+            attacker = board.grid[omv.fr][omv.fc]
+            if attacker is None or attacker[1] != enemy:
+                continue
+
+            # Verify the enemy capture is legal enough: opponent must not leave
+            # their own general in check after making the capture.
+            board.make(omv)
+            try:
+                if board.in_check(enemy):
+                    continue
+            finally:
+                board.unmake()
+
+            attacker_value = PIECE_VALUE.get(attacker[0], 0)
+
+            # Net loss from landing there. Non-capturing chariot blunders get hit
+            # very hard; this is exactly the double-chariot loss pattern.
+            exchange_loss = moved_value - captured_value
+            penalty = exchange_loss + max(0, moved_value - attacker_value) // 2 + 300
+
+            if moved_kind == "C":
+                penalty += 400
+            elif moved_kind == "P":
+                penalty += 250
+
+            worst = max(worst, penalty)
+
+        return min(2200, worst)
 
     def _root_home_invasion_risk(self, board: Board, side: int) -> int:
         """Penalty for allowing immediate enemy chariot/cannon home-rank invasion.
