@@ -1,0 +1,7 @@
+# Build the Cython accelerator in-place so gunicorn (which runs server.py from
+# the source tree) can import janggi/_attack*.so directly.
+[phases.build]
+cmds = [
+  "pip install cython>=3.0",
+  "python setup.py build_ext --inplace",
+]

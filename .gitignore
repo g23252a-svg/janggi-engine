@@ -16,3 +16,9 @@ janggi/policy_*.py
 janggi/net_vs_net.py
 janggi/nn_match.py
 janggi/risk_ab.py
+
+# Cython build artifacts (compiled on deploy, never committed)
+janggi/_attack.c
+janggi/*.so
+build/
+*.egg-info/

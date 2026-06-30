@@ -30,6 +30,16 @@ CHO = -1
 ROWS = 10
 COLS = 9
 
+# --- Cython fast-attack acceleration (optional, falls back to pure Python) ---
+try:
+    from janggi._attack import fast_is_attacked_c as _c_fast_is_attacked
+    import array as _array
+    _HAVE_CATTACK = True
+except Exception:
+    _HAVE_CATTACK = False
+
+_PIECE_CODE = {"C": 1, "P": 2, "M": 3, "S": 4, "J": 5, "K": 6, "G": 7}
+
 # Material values in centipawn-like units. Tuned for Janggi: the chariot is
 # the strongest line piece, the cannon needs a screen so it is worth less, and
 # elephant/horse are similar with the horse slightly more flexible.
@@ -100,7 +110,7 @@ FORMATIONS = {
 class Board:
     """Mutable board with make/unmake for efficient search."""
 
-    __slots__ = ("grid", "side_to_move", "_history")
+    __slots__ = ("grid", "side_to_move", "_history", "_pc", "_sd")
 
     def __init__(self) -> None:
         # grid[r][c] is None or a (type, side) tuple.
@@ -109,6 +119,11 @@ class Board:
         ]
         self.side_to_move = CHO  # Cho always moves first.
         self._history: list[tuple[Move, tuple[str, int] | None]] = []
+        # Parallel integer board for the Cython attack accelerator.
+        # _pc[r*COLS+c]: piece code (0 empty), _sd: side code (0/1/2).
+        if _HAVE_CATTACK:
+            self._pc = _array.array('i', bytes(4 * ROWS * COLS))
+            self._sd = _array.array('i', bytes(4 * ROWS * COLS))
 
     # ------------------------------------------------------------------ setup
     @classmethod
@@ -137,6 +152,11 @@ class Board:
         g[po][7] = ("P", side)
         for c in (0, 2, 4, 6, 8):
             g[jol][c] = ("J", side)
+        if _HAVE_CATTACK:
+            # Re-sync the whole board after placement (covers all pieces).
+            for _r in range(ROWS):
+                for _c in range(COLS):
+                    self._sync_cell(_r, _c, g[_r][_c])
 
     # -------------------------------------------------------------- accessors
     def piece_at(self, r: int, c: int) -> tuple[str, int] | None:
@@ -152,6 +172,16 @@ class Board:
         return None
 
     # ----------------------------------------------------------- make/unmake
+    def _sync_cell(self, r: int, c: int, p) -> None:
+        """Mirror one square into the parallel int arrays."""
+        idx = r * COLS + c
+        if p is None:
+            self._pc[idx] = 0
+            self._sd[idx] = 0
+        else:
+            self._pc[idx] = _PIECE_CODE[p[0]]
+            self._sd[idx] = 1 if p[1] == HAN else 2
+
     def make(self, mv: Move) -> None:
         g = self.grid
         moving = g[mv.fr][mv.fc]
@@ -159,6 +189,11 @@ class Board:
         self._history.append((mv, captured))
         g[mv.tr][mv.tc] = moving
         g[mv.fr][mv.fc] = None
+        if _HAVE_CATTACK:
+            ti = mv.tr * COLS + mv.tc
+            fi = mv.fr * COLS + mv.fc
+            self._pc[ti] = self._pc[fi]; self._sd[ti] = self._sd[fi]
+            self._pc[fi] = 0; self._sd[fi] = 0
         self.side_to_move = -self.side_to_move
 
     def unmake(self) -> None:
@@ -167,6 +202,15 @@ class Board:
         moving = g[mv.tr][mv.tc]
         g[mv.fr][mv.fc] = moving
         g[mv.tr][mv.tc] = captured
+        if _HAVE_CATTACK:
+            ti = mv.tr * COLS + mv.tc
+            fi = mv.fr * COLS + mv.fc
+            self._pc[fi] = self._pc[ti]; self._sd[fi] = self._sd[ti]
+            if captured is None:
+                self._pc[ti] = 0; self._sd[ti] = 0
+            else:
+                self._pc[ti] = _PIECE_CODE[captured[0]]
+                self._sd[ti] = 1 if captured[1] == HAN else 2
         self.side_to_move = -self.side_to_move
 
     def last_move(self) -> Move | None:
@@ -381,6 +425,14 @@ class Board:
         return False
 
     def fast_is_attacked(self, r: int, c: int, by_side: int) -> bool:
+        """Attack test. Uses the Cython accelerator when available; otherwise
+        falls back to the pure-Python implementation (identical results)."""
+        if not _HAVE_CATTACK:
+            return self._py_fast_is_attacked(r, c, by_side)
+        bs = 1 if by_side == HAN else 2
+        return _c_fast_is_attacked(self._pc, self._sd, r, c, bs)
+
+    def _py_fast_is_attacked(self, r: int, c: int, by_side: int) -> bool:
         """Fast attack test: look OUTWARD from (r, c) for each attacker type,
         instead of generating every enemy move. Differentially verified to
         match is_attacked() exactly across thousands of positions.
