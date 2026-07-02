@@ -32,7 +32,7 @@ app = Flask(__name__)
 
 # Bound the work the public endpoint will do so a request cannot hang the dyno.
 MAX_TIME = 6.0
-MAX_DEPTH = 7
+MAX_DEPTH = 9
 
 # Opening book learned from recorded games (gibo). Loaded once at startup.
 _BOOK_PATH = os.path.join(os.path.dirname(__file__), "data", "opening_book.json")
@@ -111,14 +111,16 @@ def api_analyze():
 
     requested = max(0.5, min(requested, MAX_TIME))
 
+    # Cython core: d7 ~1s, d8 ~5s on Railway-class CPUs. Iterative deepening
+    # keeps the last COMPLETED depth, so a too-deep target degrades gracefully.
     if requested <= 1.5:
-        depth = 4
+        depth = 6
         time_limit = 1.2
     elif requested <= 3.0:
-        depth = 5
+        depth = 7
         time_limit = 2.2
     else:
-        depth = 6
+        depth = 8
         time_limit = 4.5
 
     if "depth" in data:

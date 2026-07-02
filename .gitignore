@@ -22,3 +22,4 @@ janggi/_attack.c
 janggi/*.so
 build/
 *.egg-info/
+janggi/*.c

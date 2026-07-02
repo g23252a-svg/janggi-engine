@@ -25,6 +25,12 @@ from .board import Board, Move, HAN, CHO, ROWS, COLS, PIECE_VALUE
 from .evaluate import evaluate
 from .see import see
 
+try:
+    from janggi._core import core_reset, core_negamax, core_stats
+    _HAVE_CORE = True
+except Exception:
+    _HAVE_CORE = False
+
 MATE = 1_000_000
 
 # Transposition table entry flags.
@@ -116,6 +122,8 @@ class Engine:
         # search blowing up. Read from the class attribute so it can be tuned or
         # disabled (0) for A/B comparison.
         self._ext_budget = self.EXT_BUDGET
+        if _HAVE_CORE:
+            core_reset(self.max_depth, self.EXT_BUDGET)
         self._deadline = (time.time() + self.time_limit) if self.time_limit else None
         best_move: Move | None = None
         best_score = 0
@@ -149,6 +157,11 @@ class Engine:
             # Stop early on a forced mate.
             if abs(best_score) > MATE - 1000:
                 break
+        if _HAVE_CORE:
+            cn, cq, ct = core_stats()
+            self.stats.nodes += cn
+            self.stats.qnodes += cq
+            self.stats.tt_hits += ct
         return best_move, best_score
 
     # ------------------------------------------------------------- internals
@@ -190,7 +203,19 @@ class Engine:
 
             board.make(mv)
             try:
-                score = -self._negamax(board, -side, depth - 1, -beta, -alpha)
+                if _HAVE_CORE:
+                    try:
+                        score = -core_negamax(
+                            board._pc, board._sd,
+                            1 if -side == HAN else 2,
+                            depth - 1, -beta, -alpha,
+                            self._deadline or 0.0,
+                            len(board._history),
+                        )
+                    except TimeoutError:
+                        raise _Timeout()
+                else:
+                    score = -self._negamax(board, -side, depth - 1, -beta, -alpha)
                 score += capture_credit
                 # root risk guards removed: over-fit, weakened engine (verified 1:5 vs clean)
                 pass

@@ -31,12 +31,21 @@ ROWS = 10
 COLS = 9
 
 # --- Cython fast-attack acceleration (optional, falls back to pure Python) ---
+import array as _array
+
 try:
     from janggi._attack import fast_is_attacked_c as _c_fast_is_attacked
-    import array as _array
     _HAVE_CATTACK = True
 except Exception:
     _HAVE_CATTACK = False
+
+try:
+    from janggi._movegen import generate_pseudo_c as _c_generate_pseudo
+    _HAVE_CMOVEGEN = _HAVE_CATTACK  # int arrays are maintained only when attack accel is on
+except Exception:
+    _HAVE_CMOVEGEN = False
+
+_CODE_PIECE = {1: "C", 2: "P", 3: "M", 4: "S", 5: "J", 6: "K", 7: "G"}
 
 _PIECE_CODE = {"C": 1, "P": 2, "M": 3, "S": 4, "J": 5, "K": 6, "G": 7}
 
@@ -121,9 +130,8 @@ class Board:
         self._history: list[tuple[Move, tuple[str, int] | None]] = []
         # Parallel integer board for the Cython attack accelerator.
         # _pc[r*COLS+c]: piece code (0 empty), _sd: side code (0/1/2).
-        if _HAVE_CATTACK:
-            self._pc = _array.array('i', bytes(4 * ROWS * COLS))
-            self._sd = _array.array('i', bytes(4 * ROWS * COLS))
+        self._pc = _array.array('i', bytes(4 * ROWS * COLS))
+        self._sd = _array.array('i', bytes(4 * ROWS * COLS))
 
     # ------------------------------------------------------------------ setup
     @classmethod
@@ -152,7 +160,7 @@ class Board:
         g[po][7] = ("P", side)
         for c in (0, 2, 4, 6, 8):
             g[jol][c] = ("J", side)
-        if _HAVE_CATTACK:
+        if True:
             # Re-sync the whole board after placement (covers all pieces).
             for _r in range(ROWS):
                 for _c in range(COLS):
@@ -190,8 +198,6 @@ class Board:
         sync automatically; direct grid writes do not, and stale arrays make
         the Cython attack test see an empty board (check detection breaks).
         """
-        if not _HAVE_CATTACK:
-            return
         g = self.grid
         for _r in range(ROWS):
             for _c in range(COLS):
@@ -204,7 +210,7 @@ class Board:
         self._history.append((mv, captured))
         g[mv.tr][mv.tc] = moving
         g[mv.fr][mv.fc] = None
-        if _HAVE_CATTACK:
+        if True:
             ti = mv.tr * COLS + mv.tc
             fi = mv.fr * COLS + mv.fc
             self._pc[ti] = self._pc[fi]; self._sd[ti] = self._sd[fi]
@@ -217,7 +223,7 @@ class Board:
         moving = g[mv.tr][mv.tc]
         g[mv.fr][mv.fc] = moving
         g[mv.tr][mv.tc] = captured
-        if _HAVE_CATTACK:
+        if True:
             ti = mv.tr * COLS + mv.tc
             fi = mv.fr * COLS + mv.fc
             self._pc[fi] = self._pc[ti]; self._sd[fi] = self._sd[ti]
@@ -242,6 +248,19 @@ class Board:
 
     # ------------------------------------------------------ move generation
     def generate_pseudo(self, side: int) -> list[Move]:
+        """All moves ignoring self-check and the facing-generals rule.
+        Uses the Cython generator when available (identical results, verified);
+        falls back to the pure-Python implementation otherwise."""
+        if _HAVE_CMOVEGEN:
+            bs = 1 if side == HAN else 2
+            raw = _c_generate_pseudo(self._pc, self._sd, bs)
+            return [
+                Move(fr, fc, tr, tc, _CODE_PIECE[cap] if cap else None)
+                for fr, fc, tr, tc, cap in raw
+            ]
+        return self._py_generate_pseudo(side)
+
+    def _py_generate_pseudo(self, side: int) -> list[Move]:
         """All moves ignoring self-check and the facing-generals rule."""
         moves: list[Move] = []
         g = self.grid

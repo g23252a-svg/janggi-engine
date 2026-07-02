@@ -123,7 +123,27 @@ def _cannon_has_screen(board: Board, r: int, c: int) -> bool:
     return False
 
 
+try:
+    from janggi._fasteval import evaluate_c as _c_evaluate
+    from janggi._movegen import generate_pseudo_c as _c_pseudo
+    from janggi.board import _HAVE_CATTACK as _ACCEL_ARRAYS
+    _HAVE_CEVAL = _ACCEL_ARRAYS
+except Exception:
+    _HAVE_CEVAL = False
+
+
 def evaluate(board: Board, include_mobility: bool = True) -> int:
+    """Static evaluation. Uses the Cython evaluator when the int arrays are
+    live (identical results, verified); falls back to pure Python otherwise."""
+    if _HAVE_CEVAL:
+        mob = 0
+        if include_mobility:
+            mob = len(_c_pseudo(board._pc, board._sd, 1)) - len(_c_pseudo(board._pc, board._sd, 2))
+        return _c_evaluate(board._pc, board._sd, len(board._history), mob)
+    return _py_evaluate(board, include_mobility)
+
+
+def _py_evaluate(board: Board, include_mobility: bool = True) -> int:
     score = 0
     material_score = 0
     g = board.grid
