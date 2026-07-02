@@ -182,6 +182,21 @@ class Board:
             self._pc[idx] = _PIECE_CODE[p[0]]
             self._sd[idx] = 1 if p[1] == HAN else 2
 
+    def resync_int_arrays(self) -> None:
+        """Rebuild the parallel int arrays from self.grid.
+
+        MUST be called after any code writes to self.grid directly (e.g. the
+        server's json_to_board). make/unmake/_place_side keep the arrays in
+        sync automatically; direct grid writes do not, and stale arrays make
+        the Cython attack test see an empty board (check detection breaks).
+        """
+        if not _HAVE_CATTACK:
+            return
+        g = self.grid
+        for _r in range(ROWS):
+            for _c in range(COLS):
+                self._sync_cell(_r, _c, g[_r][_c])
+
     def make(self, mv: Move) -> None:
         g = self.grid
         moving = g[mv.fr][mv.fc]

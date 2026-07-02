@@ -62,6 +62,9 @@ def json_to_board(grid: list[list[str | None]]) -> Board:
             if cell:
                 side = HAN if cell[0] == "h" else CHO
                 b.grid[r][c] = (cell[1], side)
+    # Direct grid writes above bypass make/unmake; rebuild the Cython int
+    # arrays or check detection sees an empty board (production bug 2026-07-02).
+    b.resync_int_arrays()
     return b
 
 
