@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from janggi.board import Board, Move, HAN, CHO  # noqa: E402
 from janggi.search import Engine, zobrist_hash  # noqa: E402
 from janggi.evaluate import evaluate  # noqa: E402
+import janggi.search as search_module  # noqa: E402
 
 
 def empty_board() -> Board:
@@ -382,3 +383,147 @@ def test_book_move_none_for_unknown_position():
     b = Board.standard()
     # Move a piece into an off-book position, empty book -> None.
     assert book_move({}, b) is None
+
+
+# --------------------------------------------------------- search correctness
+def test_quiescence_in_check_searches_quiet_evasions():
+    """A checked side may not use stand-pat; quiet evasions must be searched."""
+    b = empty_board()
+    b.grid[1][4] = ("K", HAN)
+    b.grid[8][4] = ("K", CHO)
+    b.grid[5][4] = ("C", HAN)  # file check; CHO can evade without capturing
+    b.resync_int_arrays()
+    assert b.in_check(CHO)
+    assert any(m.captured is None for m in b.legal_moves(CHO))
+
+    eng = Engine(max_depth=1)
+    eng._deadline = None
+    eng._quiescence(b, CHO, -2 * search_module.MATE, 2 * search_module.MATE)
+
+    # The old qsearch returned after its single stand-pat evaluation here.
+    assert eng.stats.qnodes > 1
+    assert len(b._history) == 0
+
+
+def test_python_search_restores_board_when_timeout_interrupts_recursion():
+    """A deadline exception must not leave nested make() calls on the board."""
+    b = Board.standard()
+    before_grid = tuple(tuple(row) for row in b.grid)
+    before_side = b.side_to_move
+    before_pc = tuple(b._pc)
+    before_sd = tuple(b._sd)
+
+    eng = Engine(max_depth=4)
+    eng._ext_budget = eng.EXT_BUDGET
+    calls = 0
+
+    def interrupt_inside_tree():
+        nonlocal calls
+        calls += 1
+        if calls >= 5:
+            raise search_module._Timeout()
+
+    eng._check_time = interrupt_inside_tree
+    interrupted = False
+    try:
+        eng._negamax(b, CHO, 3, -2 * search_module.MATE, 2 * search_module.MATE)
+    except search_module._Timeout:
+        interrupted = True
+
+    assert interrupted
+    assert tuple(tuple(row) for row in b.grid) == before_grid
+    assert b.side_to_move == before_side
+    assert tuple(b._pc) == before_pc
+    assert tuple(b._sd) == before_sd
+    assert len(b._history) == 0
+    assert eng._ext_budget == eng.EXT_BUDGET
+
+
+def test_neural_value_score_uses_engine_perspective():
+    from janggi.nn_eval import value_to_score
+
+    assert value_to_score(1.0) > 0   # HAN advantage
+    assert value_to_score(-1.0) < 0  # CHO advantage
+    assert value_to_score(0.0) == 0
+
+
+def test_custom_evaluator_is_used_by_python_search():
+    b = empty_board()
+    b.grid[1][4] = ("K", HAN)
+    b.grid[8][4] = ("K", CHO)
+    eng = Engine(max_depth=1, evaluator=lambda _board: 321)
+    eng._deadline = None
+
+    assert not eng._use_core
+    assert eng._quiescence(
+        b, HAN, -2 * search_module.MATE, 2 * search_module.MATE
+    ) == 321
+
+
+def test_neural_mcts_returns_visit_policy_and_restores_board():
+    from janggi.mcts import NeuralMCTS
+
+    b = Board.standard()
+    before_grid = tuple(tuple(row) for row in b.grid)
+    legal = {move.as_tuple() for move in b.legal_moves(CHO)}
+
+    def uniform_predictor(position):
+        moves = position.legal_moves(position.side_to_move)
+        return {move.as_tuple(): 1.0 for move in moves}, 0.0
+
+    mcts = NeuralMCTS(uniform_predictor, simulations=12, seed=7)
+    move, policy = mcts.search(b, temperature=0.0, add_root_noise=False)
+
+    assert move is not None and move.as_tuple() in legal
+    assert policy and abs(sum(policy.values()) - 1.0) < 1e-9
+    assert set(policy).issubset(legal)
+    assert tuple(tuple(row) for row in b.grid) == before_grid
+    assert b.side_to_move == CHO
+    assert len(b._history) == 0
+
+
+def test_neural_mcts_respects_forbidden_root_moves():
+    from janggi.mcts import NeuralMCTS
+
+    b = Board.standard()
+    legal = b.legal_moves(CHO)
+    allowed = legal[0].as_tuple()
+    forbidden = {move.as_tuple() for move in legal[1:]}
+
+    def uniform_predictor(position):
+        moves = position.legal_moves(position.side_to_move)
+        return {move.as_tuple(): 1.0 for move in moves}, 0.0
+
+    move, policy = NeuralMCTS(
+        uniform_predictor, simulations=4, seed=11
+    ).search(b, forbidden_moves=forbidden)
+
+    assert move is not None and move.as_tuple() == allowed
+    assert policy == {allowed: 1.0}
+    assert len(b._history) == 0
+
+
+def test_cython_quiescence_in_check_searches_evasions_when_available():
+    """Exercise the compiled deployment path when extensions are installed."""
+    try:
+        from janggi._core import core_reset, core_negamax, core_stats
+    except ImportError:
+        return
+
+    b = empty_board()
+    b.grid[1][4] = ("K", HAN)
+    b.grid[8][4] = ("K", CHO)
+    b.grid[5][4] = ("C", HAN)
+    b.resync_int_arrays()
+    before_pc, before_sd = tuple(b._pc), tuple(b._sd)
+
+    core_reset(1, 0)
+    core_negamax(
+        b._pc, b._sd, 2, 0,
+        -2 * search_module.MATE, 2 * search_module.MATE,
+        0.0, 0,
+    )
+    _nodes, qnodes, _hits = core_stats()
+    assert qnodes > 1
+    assert tuple(b._pc) == before_pc
+    assert tuple(b._sd) == before_sd

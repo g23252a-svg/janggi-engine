@@ -20,6 +20,7 @@ from __future__ import annotations
 import random
 import time
 from dataclasses import dataclass, field
+from typing import Callable
 
 from .board import Board, Move, HAN, CHO, ROWS, COLS, PIECE_VALUE
 from .evaluate import evaluate
@@ -89,9 +90,23 @@ class Engine:
     EXT_BUDGET = 3  # check-extension ply budget per branch (0 disables)
     _ROOT_TOPK = 10  # deep root passes only search this many top shallow-ranked moves
 
-    def __init__(self, max_depth: int = 6, time_limit: float | None = None) -> None:
+    def __init__(
+        self,
+        max_depth: int = 6,
+        time_limit: float | None = None,
+        evaluator: Callable[[Board], int] | None = None,
+    ) -> None:
+        """Create a search engine.
+
+        ``evaluator`` is an optional static evaluator whose score must use the
+        engine convention (positive = HAN, negative = CHO).  A custom Python
+        evaluator disables the Cython search core because the compiled core
+        cannot call it; this is the opt-in bridge used by ``nn_eval``.
+        """
         self.max_depth = max_depth
         self.time_limit = time_limit
+        self._evaluator = evaluator
+        self._use_core = _HAVE_CORE and evaluator is None
         self.tt: dict[int, TTEntry] = {}
         self.stats = SearchStats()
         self._deadline: float | None = None
@@ -122,7 +137,7 @@ class Engine:
         # search blowing up. Read from the class attribute so it can be tuned or
         # disabled (0) for A/B comparison.
         self._ext_budget = self.EXT_BUDGET
-        if _HAVE_CORE:
+        if self._use_core:
             core_reset(self.max_depth, self.EXT_BUDGET)
         self._deadline = (time.time() + self.time_limit) if self.time_limit else None
         best_move: Move | None = None
@@ -157,7 +172,7 @@ class Engine:
             # Stop early on a forced mate.
             if abs(best_score) > MATE - 1000:
                 break
-        if _HAVE_CORE:
+        if self._use_core:
             cn, cq, ct = core_stats()
             self.stats.nodes += cn
             self.stats.qnodes += cq
@@ -168,6 +183,12 @@ class Engine:
     def _check_time(self) -> None:
         if self._deadline is not None and time.time() > self._deadline:
             raise _Timeout()
+
+    def _static_evaluate(self, board: Board) -> int:
+        """Return a fast leaf score using the configured sign convention."""
+        if self._evaluator is not None:
+            return int(self._evaluator(board))
+        return evaluate(board, include_mobility=False)
 
     def _root(
         self,
@@ -203,7 +224,7 @@ class Engine:
 
             board.make(mv)
             try:
-                if _HAVE_CORE:
+                if self._use_core:
                     try:
                         score = -core_negamax(
                             board._pc, board._sd,
@@ -598,22 +619,31 @@ class Engine:
             self._ext_budget -= 1
         for move_index, mv in enumerate(moves):
             board.make(mv)
-            # Late Move Reduction (LMR). Moves ordered late by the move orderer
-            # are unlikely to be best, so search them one ply shallower first as a
-            # cheap probe. Only reduce QUIET, non-checking moves that are well
-            # down the list, and never when extending or near the leaves. If the
-            # reduced search unexpectedly beats alpha, re-search at full depth so
-            # nothing good is missed. This is what makes deeper iterations
-            # tractable without dropping tactics.
-            reduce = 0
-            if (extend == 0 and depth >= 3 and move_index >= 3
-                    and mv.captured is None and not board.in_check(-side)):
-                reduce = 1
-            score = -self._negamax(board, -side, depth - 1 + extend - reduce, -beta, -alpha)
-            if reduce and score > alpha:
-                # Promising despite the reduction — verify at full depth.
-                score = -self._negamax(board, -side, depth - 1 + extend, -beta, -alpha)
-            board.unmake()
+            try:
+                # Late Move Reduction (LMR). Moves ordered late by the move
+                # orderer are searched one ply shallower as a cheap probe.
+                reduce = 0
+                if (extend == 0 and depth >= 3 and move_index >= 3
+                        and mv.captured is None and not board.in_check(-side)):
+                    reduce = 1
+                score = -self._negamax(
+                    board, -side, depth - 1 + extend - reduce, -beta, -alpha
+                )
+                if reduce and score > alpha:
+                    # Promising despite the reduction: verify at full depth.
+                    score = -self._negamax(
+                        board, -side, depth - 1 + extend, -beta, -alpha
+                    )
+            except _Timeout:
+                # Restore the check-extension token owned by this node. Normal
+                # completion restores it after the move loop below.
+                if extend:
+                    self._ext_budget += 1
+                raise
+            finally:
+                # Deadline exceptions can originate at any descendant. Always
+                # restore this ply before propagating them to iterative search.
+                board.unmake()
             if score > best_score:
                 best_score = score
                 best_move = mv
@@ -640,39 +670,61 @@ class Engine:
         self.tt[key] = TTEntry(depth, best_score, flag, best_move)
         return best_score
 
-    def _quiescence(self, board: Board, side: int, alpha: int, beta: int) -> int:
-        """Search only captures until the position is quiet."""
+    def _quiescence(
+        self, board: Board, side: int, alpha: int, beta: int, qply: int = 0
+    ) -> int:
+        """Resolve checks and captures until the position is legally quiet."""
         self.stats.qnodes += 1
         self._check_time()
-        stand_pat = evaluate(board, include_mobility=False) * side
-        if stand_pat >= beta:
-            return beta
-        if stand_pat > alpha:
-            alpha = stand_pat
+        in_check = board.in_check(side)
 
-        # Use pseudo-legal captures for speed; verify legality lazily via the
-        # general-capture guard. A move that leaves our own general capturable
-        # will simply be refuted on the opponent's reply (they capture the
-        # general -> huge negative), so quiescence stays sound without the
-        # expensive full legal_moves() filter.
-        captures = [mv for mv in board.generate_pseudo(side) if mv.captured is not None]
-        captures.sort(key=lambda m: self._mvv_lva(board, m), reverse=True)
-        for mv in captures:
-            # Capturing the enemy general ends the game immediately.
-            if mv.captured == "K":
-                return MATE
+        # Stand-pat means choosing to make no move. It is only valid outside
+        # check; while checked every legal evasion (including quiet moves) must
+        # be searched. The cap prevents pathological perpetual-check cycles.
+        if qply >= 32:
+            return self._static_evaluate(board) * side
+        if not in_check:
+            stand_pat = self._static_evaluate(board) * side
+            if stand_pat >= beta:
+                return beta
+            if stand_pat > alpha:
+                alpha = stand_pat
+
+        candidates = board.generate_pseudo(side)
+        if not in_check:
+            candidates = [mv for mv in candidates if mv.captured is not None]
+        candidates.sort(
+            key=lambda m: (m.captured is not None, self._mvv_lva(board, m)),
+            reverse=True,
+        )
+
+        legal_found = False
+        for mv in candidates:
             # Skip captures that lose material after recaptures (SEE < 0). This
             # is what stops the engine from "winning" a cannon with a chariot
-            # that then gets recaptured. Equal/winning captures still searched.
-            if see(board, mv) < 0:
+            # that then gets recaptured. In check, never prune a forced evasion.
+            if not in_check and see(board, mv) < 0:
                 continue
             board.make(mv)
-            score = -self._quiescence(board, -side, -beta, -alpha)
-            board.unmake()
+            try:
+                # Pseudo move generation is fast, but a pinned capture or
+                # evasion that leaves our general attacked is not a legal move.
+                if board.in_check(side):
+                    continue
+                legal_found = True
+                if mv.captured == "K":
+                    return MATE
+                score = -self._quiescence(
+                    board, -side, -beta, -alpha, qply=qply + 1
+                )
+            finally:
+                board.unmake()
             if score >= beta:
                 return beta
             if score > alpha:
                 alpha = score
+        if in_check and not legal_found:
+            return -MATE + qply
         return alpha
 
     # ------------------------------------------------------- move ordering
