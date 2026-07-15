@@ -10,8 +10,9 @@ PC에서 신경망이 추천하면 폰에 따라 두는 기존 방식 그대로 
 지금까지 못 잡던 "기물은 이기는데 왕이 위험", "호각인데 서서히 밀림" 같은
 위치적 판단을 데이터에서 학습합니다.
 
-탐색(알파베타)은 검증된 기존 것을 그대로 쓰고, **평가만 신경망으로 교체**합니다.
-이게 가장 안전하고 효과 확실한 1단계입니다.
+1단계는 기존 알파베타에 신경망 가치 평가를 주입해 비교하고, 2단계부터는
+**정책+가치 신경망을 PUCT MCTS에 연결**합니다. MCTS의 방문 횟수 분포를 다시
+정책 타깃으로 학습해야 기존 엔진을 단순 모방하는 데서 벗어날 수 있습니다.
 
 ## 0. 준비 (한 번만)
 
@@ -48,26 +49,55 @@ python -m janggi.train --data data/selfplay_iter0.jsonl --epochs 15 --out data/n
 - value_loss(승패 예측)와 policy_loss(수 예측)가 **둘 다 내려가야** 정상입니다.
 - value_loss가 0.3 아래로 가면 승패를 꽤 잘 맞히는 겁니다.
 
-## 3. 신경망을 엔진에 연결 (검증)
+## 3. 신경망을 엔진에 연결 (가치 평가 검증)
 
-학습된 net을 평가 함수로 써서, 기존 손-평가와 자가대국으로 비교합니다.
-(이 비교 스크립트는 다음 단계에서 추가 — 우선 net이 돌아가는지 확인:)
+학습된 net을 평가 함수로 써서 값의 방향과 실제 탐색 연결을 먼저 확인합니다.
 
 ```bash
 python -c "from janggi.nn_eval import load_net, nn_evaluate; \
-import janggi.board as B; \
+from janggi.search import Engine; import janggi.board as B; \
 print('loaded:', load_net('data/net_iter0.pt')); \
-print('eval:', nn_evaluate(B.Board.standard('smms','smms')))"
+b=B.Board.standard('smms','smms'); \
+print(Engine(max_depth=3, evaluator=nn_evaluate).search(b,b.side_to_move))"
 ```
+
+사용자 정의 평가는 Python 콜백이므로 Cython 탐색 코어를 자동으로 끕니다. 이
+경로는 가치망의 방향과 품질을 비교하는 용도이고, 본격 자가학습은 아래 MCTS
+경로를 사용합니다. 엔진 평가 규약은 `양수=한 우세`, `음수=초 우세`입니다.
 
 ## 4. AlphaZero 반복 (강해지는 루프)
 
-1단계 net이 손-평가보다 강하면, 그 net으로 다시 self-play → 더 좋은 데이터 →
-재학습. 이걸 반복할수록 강해집니다. (net-guided self-play는 다음 버전에서 추가.)
+net0부터는 신경망 정책과 가치를 사용하는 MCTS로 자가대국합니다. 출력 JSONL의
+`p` 필드는 선택된 한 수가 아니라 루트 방문분포이며, `train.py`가 이를 soft-policy
+타깃으로 사용합니다.
+
+```bash
+python -m janggi.selfplay --games 300 \
+  --net data/net_iter0.pt --simulations 200 \
+  --out data/selfplay_iter1.jsonl
+
+python -m janggi.train --data data/selfplay_iter0.jsonl data/selfplay_iter1.jsonl --epochs 15 \
+  --init data/net_iter0.pt --out data/net_iter1.pt
+```
+
+그 다음에는 `net1 → selfplay_iter2 → net2`처럼 반복합니다. 초반 12수에는
+Dirichlet 노이즈와 온도 샘플링이 적용되어 데이터가 한 정석에 고착되는 것을
+막고, 이후에는 방문 횟수가 가장 많은 수를 둡니다. `--data`에는 최근 여러
+iteration을 함께 넣어 replay window로 사용하세요. 같은 대국의 인접 국면이
+학습/검증에 섞이지 않도록 대국 단위로 10%를 보류하며, 그 검증셋의 합산 손실이
+가장 낮은 checkpoint만 `--out`에 저장됩니다.
+
+새 모델은 바로 승격하지 말고 이전 champion과 양쪽 진영을 번갈아 대국시킵니다.
+같은 포진을 두 판씩 공유하며 기본 승격 기준은 55%입니다.
+
+```bash
+python -m janggi.arena --candidate data/net_iter1.pt \
+  --champion data/net_iter0.pt --games 40 --simulations 200
+```
 
 ```
 iter0: 알파베타로 데이터 → net0 학습
-iter1: net0로 데이터 → net1 학습 (--init data/net_iter0.pt 로 warm-start)
+iter1: net0 + MCTS로 방문분포 데이터 → net1 학습 (--init으로 warm-start)
 iter2: net1로 데이터 → net2 학습
 ...
 ```
@@ -76,12 +106,16 @@ iter2: net1로 데이터 → net2 학습
 
 - 1단계(net0)만으로도 손-평가보다 나을 가능성이 높습니다 — 특히 위치 판단에서.
 - 다만 보장은 못 합니다. 데이터 양/질이 관건이고, 반복(iter)을 돌려야 진짜 강해집니다.
-- 풀 AlphaZero(MCTS+정책망 주도 탐색)는 2단계입니다. 1단계 검증 후 진행하세요.
+- 새 net은 이전 net과 별도 대국해 승률이 확인된 경우에만 운영용으로 승격하세요.
+- 200 simulations는 시작점입니다. GPU 여유가 있으면 400~800으로 올리되,
+  판 수와 탐색 수의 균형을 실험으로 정해야 합니다.
 
 ## 파일 정리
 
 - `janggi/nn_encode.py`  — 국면 → 신경망 입력 (torch 불필요, 검증됨)
 - `janggi/nn_model.py`   — 신경망 구조 (PyTorch)
-- `janggi/selfplay.py`   — 자가대국 데이터 생성 (torch 불필요)
+- `janggi/mcts.py`       — 정책+가치망을 사용하는 PUCT 탐색 (torch 독립)
+- `janggi/arena.py`      — candidate/champion 교차 대국과 승격 판정
+- `janggi/selfplay.py`   — 알파베타 bootstrap / 신경망 MCTS 데이터 생성
 - `janggi/train.py`      — 학습 (PyTorch + GPU)
-- `janggi/nn_eval.py`    — 학습된 net을 엔진 평가로 연결 (torch 있으면 활성, 없으면 기존 평가)
+- `janggi/nn_eval.py`    — 학습된 net의 가치 평가와 합법수 정책 확률 제공

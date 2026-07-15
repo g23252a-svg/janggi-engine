@@ -715,22 +715,33 @@ cdef int _qsearch(int* piece, int* side, int who, int alpha, int beta, int ply):
     cdef int stand = _evaluate(piece, side)
     if who == 2:
         stand = -stand
-    if stand >= beta:
-        return beta
-    if stand > alpha:
-        alpha = stand
+    # Never index beyond the per-ply move buffer on pathological checking
+    # cycles. At the cap the static score is the safest bounded fallback.
+    if ply >= MAXPLY - 1:
+        return stand
+
+    cdef int in_chk = _in_check(piece, side, who)
+    # Stand-pat is the choice to make no move, which is illegal while checked.
+    if not in_chk:
+        if stand >= beta:
+            return beta
+        if stand > alpha:
+            alpha = stand
 
     cdef int* buf = &MBUF[ply * 1024]
     cdef int n = _gen_pseudo(piece, side, who, buf)
     cdef int i, j, m, best, tmp
-    # collect captures with mvv-lva keys, selection-order
+    # Outside check collect captures; in check collect every possible evasion.
     cdef int caps[204]
     cdef int ckey[204]
     cdef int nc = 0
     for m in range(n):
-        if buf[m*5+4] != 0:
+        if in_chk or buf[m*5+4] != 0:
             caps[nc] = m
-            ckey[nc] = PVAL[buf[m*5+4]] * 10 - PVAL[piece[buf[m*5]*COLS + buf[m*5+1]]]
+            if buf[m*5+4] != 0:
+                ckey[nc] = PVAL[buf[m*5+4]] * 10 - PVAL[piece[buf[m*5]*COLS + buf[m*5+1]]]
+            else:
+                ckey[nc] = -PVAL[piece[buf[m*5]*COLS + buf[m*5+1]]]
             nc += 1
     # insertion sort desc by ckey
     for i in range(1, nc):
@@ -742,14 +753,22 @@ cdef int _qsearch(int* piece, int* side, int who, int alpha, int beta, int ply):
         caps[j+1] = m; ckey[j+1] = tmp
 
     cdef int fr, fc, tr, tc, cap, score
+    cdef int legal_found = 0
     for i in range(nc):
         m = caps[i]
         fr = buf[m*5]; fc = buf[m*5+1]; tr = buf[m*5+2]; tc = buf[m*5+3]; cap = buf[m*5+4]
-        if cap == 6:  # capturing the general ends it
-            return MATE
-        if _see(piece, side, fr, fc, tr, tc) < 0:
+        # SEE pruning is safe for optional captures, never for forced evasions.
+        if not in_chk and _see(piece, side, fr, fc, tr, tc) < 0:
             continue
         _make(piece, side, fr, fc, tr, tc)
+        # Pseudo-legal moves that leave our own general attacked are illegal.
+        if _in_check(piece, side, who):
+            _unmake(piece, side)
+            continue
+        legal_found = 1
+        if cap == 6:  # capturing the general ends it
+            _unmake(piece, side)
+            return MATE
         score = -_qsearch(piece, side, 3 - who, -beta, -alpha, ply + 1)
         _unmake(piece, side)
         if g_timeout:
@@ -758,6 +777,8 @@ cdef int _qsearch(int* piece, int* side, int who, int alpha, int beta, int ply):
             return beta
         if score > alpha:
             alpha = score
+    if in_chk and not legal_found:
+        return -MATE + ply
     return alpha
 
 cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta, int ply):

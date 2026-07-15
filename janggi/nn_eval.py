@@ -8,9 +8,8 @@ classic evaluate() with zero behaviour change — so nothing breaks on machines
 without the net.
 
 The net outputs value in [-1, 1] from HAN's perspective. The classic evaluate()
-returns centipawn-ish scores where positive = CHO good. To keep the rest of the
-search unchanged we convert: nn_eval returns the SAME sign convention as
-evaluate() (positive = CHO good) and a comparable scale.
+uses the same sign convention (positive = HAN good), so the value only needs to
+be scaled before it is passed to ``search.Engine(evaluator=nn_evaluate)``.
 """
 from __future__ import annotations
 
@@ -47,13 +46,88 @@ def nn_available() -> bool:
 _VALUE_SCALE = 2000.0
 
 
+def value_to_score(value: float) -> int:
+    """Convert a HAN-perspective network value to the engine score scale."""
+    return int(value * _VALUE_SCALE)
+
+
 def nn_evaluate(board) -> int:
     """Evaluate `board` with the net. Sign matches the classic evaluate():
-    positive = CHO good, negative = HAN good."""
+    positive = HAN good, negative = CHO good."""
+    if _NET is None or _TORCH is None:
+        raise RuntimeError("neural net is not loaded; call load_net(path) first")
     from janggi.nn_model import board_to_tensor
-    from janggi.board import HAN
     with _TORCH.no_grad():
         _policy, value = _NET(board_to_tensor(board, _DEVICE))
         v = float(value.item())  # + = HAN good (net convention)
-    # classic evaluate(): + = CHO good, so negate.
-    return int(-v * _VALUE_SCALE)
+    return value_to_score(v)
+
+
+def nn_policy_value(board) -> tuple[dict[tuple[int, int, int, int], float], float]:
+    """Return legal-move priors and a HAN-perspective value for NeuralMCTS."""
+    if _NET is None or _TORCH is None:
+        raise RuntimeError("neural net is not loaded; call load_net(path) first")
+    from janggi.nn_model import board_to_tensor, move_to_index
+
+    legal = board.legal_moves(board.side_to_move)
+    with _TORCH.no_grad():
+        logits, value = _NET(board_to_tensor(board, _DEVICE))
+        if not legal:
+            return {}, float(value.item())
+        indices = _TORCH.tensor(
+            [move_to_index(*move.as_tuple()) for move in legal],
+            dtype=_TORCH.long,
+            device=_DEVICE,
+        )
+        legal_logits = logits[0].index_select(0, indices)
+        probabilities = _TORCH.softmax(legal_logits, dim=0).detach().cpu().tolist()
+    return (
+        {move.as_tuple(): float(prob) for move, prob in zip(legal, probabilities)},
+        float(value.item()),
+    )
+
+
+class NeuralPredictor:
+    """Independent loaded network, suitable for candidate-vs-champion arenas."""
+
+    def __init__(self, path: str, device: str | None = None) -> None:
+        import torch
+        from janggi.nn_model import JanggiNet
+
+        self.torch = torch
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.net = JanggiNet().to(self.device)
+        self.net.load_state_dict(torch.load(path, map_location=self.device))
+        self.net.eval()
+
+    def evaluate(self, board) -> int:
+        """Engine-compatible static score (positive = HAN)."""
+        from janggi.nn_model import board_to_tensor
+
+        with self.torch.no_grad():
+            _logits, value = self.net(board_to_tensor(board, self.device))
+        return value_to_score(float(value.item()))
+
+    def __call__(
+        self, board
+    ) -> tuple[dict[tuple[int, int, int, int], float], float]:
+        """MCTS-compatible legal policy priors plus HAN-perspective value."""
+        from janggi.nn_model import board_to_tensor, move_to_index
+
+        legal = board.legal_moves(board.side_to_move)
+        with self.torch.no_grad():
+            logits, value = self.net(board_to_tensor(board, self.device))
+            if not legal:
+                return {}, float(value.item())
+            indices = self.torch.tensor(
+                [move_to_index(*move.as_tuple()) for move in legal],
+                dtype=self.torch.long,
+                device=self.device,
+            )
+            probabilities = self.torch.softmax(
+                logits[0].index_select(0, indices), dim=0
+            ).detach().cpu().tolist()
+        return (
+            {move.as_tuple(): float(prob) for move, prob in zip(legal, probabilities)},
+            float(value.item()),
+        )

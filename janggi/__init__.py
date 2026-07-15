@@ -6,6 +6,7 @@ from .search import Engine, zobrist_hash
 from .score import side_score, judge, SCORE_POINTS, HAN_BONUS
 from .gibo import Gibo
 from .book import build_book, load_book, book_move
+from .mcts import NeuralMCTS
 
 __all__ = [
     "Board",
@@ -24,4 +25,5 @@ __all__ = [
     "build_book",
     "load_book",
     "book_move",
+    "NeuralMCTS",
 ]
