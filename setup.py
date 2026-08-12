@@ -8,7 +8,6 @@ from setuptools import setup, find_packages, Extension
 PYX = [
     ("janggi._attack",   "janggi/_attack.pyx"),
     ("janggi._movegen",  "janggi/_movegen.pyx"),
-    ("janggi._fasteval", "janggi/_fasteval.pyx"),
     ("janggi._core",     "janggi/_core.pyx"),
 ]
 

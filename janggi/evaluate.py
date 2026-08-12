@@ -127,8 +127,7 @@ try:
     from janggi.board import DISABLE_ACCEL as _NO_ACCEL
     if _NO_ACCEL:
         raise ImportError("accelerators disabled by JANGGI_NO_ACCEL")
-    from janggi._fasteval import evaluate_c as _c_evaluate
-    from janggi._movegen import generate_pseudo_c as _c_pseudo
+    from janggi._core import core_eval as _c_evaluate, core_eval_mob as _c_evaluate_mob
     from janggi.board import _HAVE_CATTACK as _ACCEL_ARRAYS
     _HAVE_CEVAL = _ACCEL_ARRAYS
 except Exception:
@@ -139,10 +138,10 @@ def evaluate(board: Board, include_mobility: bool = True) -> int:
     """Static evaluation. Uses the Cython evaluator when the int arrays are
     live (identical results, verified); falls back to pure Python otherwise."""
     if _HAVE_CEVAL:
-        mob = 0
+        ply = len(board._history)
         if include_mobility:
-            mob = len(_c_pseudo(board._pc, board._sd, 1)) - len(_c_pseudo(board._pc, board._sd, 2))
-        return _c_evaluate(board._pc, board._sd, len(board._history), mob)
+            return _c_evaluate_mob(board._pc, board._sd, ply)
+        return _c_evaluate(board._pc, board._sd, ply)
     return _py_evaluate(board, include_mobility)
 
 

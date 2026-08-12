@@ -145,28 +145,27 @@ def test_is_attacked_and_fast_is_attacked_differ_only_on_own_pieces():
 
 
 # ------------------------------------------------------------------ evaluation
-def test_python_and_active_evaluate_agree():
-    evaluate_c = pytest.importorskip("janggi._fasteval").evaluate_c
-    generate_pseudo_c = pytest.importorskip("janggi._movegen").generate_pseudo_c
-    for board in random_positions(300, seed=505):
-        mob = (
-            len(generate_pseudo_c(board._pc, board._sd, 1))
-            - len(generate_pseudo_c(board._pc, board._sd, 2))
-        )
-        assert _py_evaluate(board, True) == evaluate_c(
-            board._pc, board._sd, len(board._history), mob
-        )
-        assert _py_evaluate(board, False) == evaluate_c(
-            board._pc, board._sd, len(board._history), 0
-        )
-
-
 def test_core_evaluate_matches_python():
     core = pytest.importorskip("janggi._core")
     for board in random_positions(300, seed=606):
-        assert _py_evaluate(board, False) == core.core_eval(
-            board._pc, board._sd, len(board._history)
-        )
+        ply = len(board._history)
+        assert _py_evaluate(board, False) == core.core_eval(board._pc, board._sd, ply)
+        assert _py_evaluate(board, True) == core.core_eval_mob(board._pc, board._sd, ply)
+
+
+def test_attack_map_matches_scalar_attack_test():
+    """The evaluator reads a precomputed attack map instead of asking
+    fast_is_attacked ~70 times per call. Every entry must agree."""
+    core = pytest.importorskip("janggi._core")
+    checked = 0
+    for board in random_positions(120, seed=505):
+        amap = core.core_attack_map(board._pc, board._sd)
+        for side_code, side in ((1, HAN), (2, CHO)):
+            for sq in range(ROWS * COLS):
+                expected = board.fast_is_attacked(sq // COLS, sq % COLS, side)
+                assert bool(amap[(side_code - 1) * 90 + sq]) == expected, (side, sq)
+                checked += 1
+    assert checked == 120 * 2 * ROWS * COLS
 
 
 # ------------------------------------------------------------------------ SEE

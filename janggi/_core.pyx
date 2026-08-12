@@ -203,6 +203,175 @@ cdef int _attacked(int* piece, int* side, int r, int c, int by_side):
                         return 1
     return 0
 
+# ------------------------------------------------------------- attack maps
+# _attacked() answers one square at a time by scanning outward from it. The
+# evaluator asks ~70 such questions per call (every piece for the loose-piece
+# term, every palace square for king safety), which made the static evaluation
+# the single most expensive thing in the search.
+#
+# _attack_maps() answers all 180 questions in one forward pass over the pieces:
+# for each piece, mark every square it bears on. Same "does this side bear on
+# this square" semantics as _attacked(), including defence of one's own pieces
+# and the rule that a cannon never bears on a cannon. Exhaustively verified
+# square-for-square against _attacked() in tests/test_parity.py.
+#
+# amap layout: amap[(s - 1) * 90 + sq], s = 1 HAN / 2 CHO.
+cdef void _attack_maps(int* piece, int* side, int* amap):
+    cdef int i, r, c, idx, pc, s, d, dr, dc, nr, nc, t, base, fwd, jumped
+    cdef int sr, sc, b1r, b1c, b2r, b2c
+    cdef int ORTH[4][2]
+    ORTH[0][0]=1; ORTH[0][1]=0; ORTH[1][0]=-1; ORTH[1][1]=0
+    ORTH[2][0]=0; ORTH[2][1]=1; ORTH[3][0]=0; ORTH[3][1]=-1
+    cdef int DIAG[4][2]
+    DIAG[0][0]=1; DIAG[0][1]=1; DIAG[1][0]=1; DIAG[1][1]=-1
+    DIAG[2][0]=-1; DIAG[2][1]=1; DIAG[3][0]=-1; DIAG[3][1]=-1
+    cdef int HL[8][4]
+    HL[0][0]=-1; HL[0][1]=0;  HL[0][2]=-2; HL[0][3]=-1
+    HL[1][0]=-1; HL[1][1]=0;  HL[1][2]=-2; HL[1][3]=1
+    HL[2][0]=1;  HL[2][1]=0;  HL[2][2]=2;  HL[2][3]=-1
+    HL[3][0]=1;  HL[3][1]=0;  HL[3][2]=2;  HL[3][3]=1
+    HL[4][0]=0;  HL[4][1]=-1; HL[4][2]=-1; HL[4][3]=-2
+    HL[5][0]=0;  HL[5][1]=-1; HL[5][2]=1;  HL[5][3]=-2
+    HL[6][0]=0;  HL[6][1]=1;  HL[6][2]=-1; HL[6][3]=2
+    HL[7][0]=0;  HL[7][1]=1;  HL[7][2]=1;  HL[7][3]=2
+    cdef int EL[8][6]
+    EL[0][0]=-1; EL[0][1]=0;  EL[0][2]=-2; EL[0][3]=-1; EL[0][4]=-3; EL[0][5]=-2
+    EL[1][0]=-1; EL[1][1]=0;  EL[1][2]=-2; EL[1][3]=1;  EL[1][4]=-3; EL[1][5]=2
+    EL[2][0]=1;  EL[2][1]=0;  EL[2][2]=2;  EL[2][3]=-1; EL[2][4]=3;  EL[2][5]=-2
+    EL[3][0]=1;  EL[3][1]=0;  EL[3][2]=2;  EL[3][3]=1;  EL[3][4]=3;  EL[3][5]=2
+    EL[4][0]=0;  EL[4][1]=-1; EL[4][2]=-1; EL[4][3]=-2; EL[4][4]=-2; EL[4][5]=-3
+    EL[5][0]=0;  EL[5][1]=-1; EL[5][2]=1;  EL[5][3]=-2; EL[5][4]=2;  EL[5][5]=-3
+    EL[6][0]=0;  EL[6][1]=1;  EL[6][2]=-1; EL[6][3]=2;  EL[6][4]=-2; EL[6][5]=3
+    EL[7][0]=0;  EL[7][1]=1;  EL[7][2]=1;  EL[7][3]=2;  EL[7][4]=2;  EL[7][5]=3
+
+    for i in range(180):
+        amap[i] = 0
+
+    for r in range(ROWS):
+        for c in range(COLS):
+            idx = r*COLS + c
+            pc = piece[idx]
+            if pc == 0:
+                continue
+            s = side[idx]
+            base = (s - 1) * 90
+
+            if pc == 1:  # chariot: every square up to and including the blocker
+                for d in range(4):
+                    dr = ORTH[d][0]; dc = ORTH[d][1]
+                    nr = r+dr; nc = c+dc
+                    while 0 <= nr < ROWS and 0 <= nc < COLS:
+                        amap[base + nr*COLS+nc] = 1
+                        if piece[nr*COLS+nc] != 0:
+                            break
+                        nr += dr; nc += dc
+                if _is_pdiag(r, c):
+                    for d in range(4):
+                        dr = DIAG[d][0]; dc = DIAG[d][1]
+                        nr = r+dr; nc = c+dc
+                        while (0 <= nr < ROWS and 0 <= nc < COLS and _is_pdiag(nr,nc)
+                               and _same_half(r,nr)):
+                            amap[base + nr*COLS+nc] = 1
+                            if piece[nr*COLS+nc] != 0:
+                                break
+                            nr += dr; nc += dc
+
+            elif pc == 2:  # cannon: past exactly one non-cannon screen
+                for d in range(4):
+                    dr = ORTH[d][0]; dc = ORTH[d][1]
+                    nr = r+dr; nc = c+dc
+                    jumped = 0
+                    while 0 <= nr < ROWS and 0 <= nc < COLS:
+                        t = piece[nr*COLS+nc]
+                        if jumped == 0:
+                            if t != 0:
+                                if t == 2:
+                                    break
+                                jumped = 1
+                        else:
+                            if t == 2:
+                                break        # never bears on a cannon
+                            amap[base + nr*COLS+nc] = 1
+                            if t != 0:
+                                break
+                        nr += dr; nc += dc
+                if _is_pdiag(r, c):
+                    for d in range(4):
+                        dr = DIAG[d][0]; dc = DIAG[d][1]
+                        nr = r+dr; nc = c+dc
+                        jumped = 0
+                        while (0 <= nr < ROWS and 0 <= nc < COLS and _is_pdiag(nr,nc)
+                               and _same_half(r,nr)):
+                            t = piece[nr*COLS+nc]
+                            if jumped == 0:
+                                if t != 0:
+                                    if t == 2:
+                                        break
+                                    jumped = 1
+                            else:
+                                if t == 2:
+                                    break
+                                amap[base + nr*COLS+nc] = 1
+                                if t != 0:
+                                    break
+                            nr += dr; nc += dc
+
+            elif pc == 3:  # horse
+                for i in range(8):
+                    sr = r + HL[i][0]; sc = c + HL[i][1]
+                    if 0 <= sr < ROWS and 0 <= sc < COLS and piece[sr*COLS+sc] == 0:
+                        nr = r + HL[i][2]; nc = c + HL[i][3]
+                        if 0 <= nr < ROWS and 0 <= nc < COLS:
+                            amap[base + nr*COLS+nc] = 1
+
+            elif pc == 4:  # elephant
+                for i in range(8):
+                    b1r = r + EL[i][0]; b1c = c + EL[i][1]
+                    b2r = r + EL[i][2]; b2c = c + EL[i][3]
+                    if (0 <= b1r < ROWS and 0 <= b1c < COLS and piece[b1r*COLS+b1c] == 0
+                            and 0 <= b2r < ROWS and 0 <= b2c < COLS
+                            and piece[b2r*COLS+b2c] == 0):
+                        nr = r + EL[i][4]; nc = c + EL[i][5]
+                        if 0 <= nr < ROWS and 0 <= nc < COLS:
+                            amap[base + nr*COLS+nc] = 1
+
+            elif pc == 5:  # soldier
+                fwd = 1 if s == 1 else -1
+                nr = r + fwd
+                if 0 <= nr < ROWS:
+                    amap[base + nr*COLS+c] = 1
+                if c - 1 >= 0:
+                    amap[base + r*COLS+c-1] = 1
+                if c + 1 < COLS:
+                    amap[base + r*COLS+c+1] = 1
+                if _is_pdiag(r, c):
+                    nr = r + fwd
+                    for i in range(2):
+                        nc = c - 1 if i == 0 else c + 1
+                        if 0 <= nr < ROWS and 0 <= nc < COLS and _is_pdiag(nr, nc):
+                            amap[base + nr*COLS+nc] = 1
+
+            elif pc == 6 or pc == 7:  # general / guard, palace only
+                if _in_palace(r, c, s):
+                    for d in range(4):
+                        nr = r + ORTH[d][0]; nc = c + ORTH[d][1]
+                        if _in_palace(nr, nc, s):
+                            amap[base + nr*COLS+nc] = 1
+                    if _is_pdiag(r, c):
+                        for d in range(4):
+                            nr = r + DIAG[d][0]; nc = c + DIAG[d][1]
+                            if _in_palace(nr, nc, s) and _is_pdiag(nr, nc):
+                                amap[base + nr*COLS+nc] = 1
+
+
+def core_attack_map(int[::1] piece, int[::1] side):
+    """Expose the maps for differential testing: returns a 180-long list."""
+    cdef int amap[180]
+    cdef int i
+    _attack_maps(&piece[0], &side[0], amap)
+    return [amap[i] for i in range(180)]
+
+
 # --------------------------------------------------------- general / check
 cdef int _find_gen(int* piece, int* side, int who, int* gr, int* gc):
     cdef int idx
@@ -560,9 +729,13 @@ cdef int _evaluate(int* piece, int* side):
     score += gh * 6
     score -= gc2 * 6
 
+    # One forward pass replaces ~70 outward attack scans per evaluation.
+    cdef int amap[180]
+    _attack_maps(piece, side, amap)
+
     if ghr >= 0:
         danger = 0
-        if _attacked(piece, side, ghr, ghc, 2):
+        if amap[90 + ghr*COLS + ghc]:
             danger += 12
         for d in range(8):
             dr2 = D8[d][0]; dc2 = D8[d][1]
@@ -575,12 +748,12 @@ cdef int _evaluate(int* piece, int* side):
             idx = nr*COLS+nc
             if piece[idx] != 0 and side[idx] == 1:
                 continue
-            if _attacked(piece, side, nr, nc, 2):
+            if amap[90 + idx]:
                 danger += 3
         score -= danger * 18
     if gcr >= 0:
         danger = 0
-        if _attacked(piece, side, gcr, gcc, 1):
+        if amap[gcr*COLS + gcc]:
             danger += 12
         for d in range(8):
             dr2 = D8[d][0]; dc2 = D8[d][1]
@@ -593,30 +766,28 @@ cdef int _evaluate(int* piece, int* side):
             idx = nr*COLS+nc
             if piece[idx] != 0 and side[idx] == 2:
                 continue
-            if _attacked(piece, side, nr, nc, 1):
+            if amap[idx]:
                 danger += 3
         score += danger * 18
 
     cdef int risk_h = 0, risk_c = 0
-    for r in range(ROWS):
-        for c in range(COLS):
-            idx = r*COLS+c
-            pc = piece[idx]
-            if pc == 0 or pc == 6:
-                continue
-            s = side[idx]
-            if s == 1:
-                if _attacked(piece, side, r, c, 2):
-                    if _attacked(piece, side, r, c, 1):
-                        risk_h += DEF_W[pc]
-                    else:
-                        risk_h += UNDEF_W[pc]
-            else:
-                if _attacked(piece, side, r, c, 1):
-                    if _attacked(piece, side, r, c, 2):
-                        risk_c += DEF_W[pc]
-                    else:
-                        risk_c += UNDEF_W[pc]
+    for idx in range(90):
+        pc = piece[idx]
+        if pc == 0 or pc == 6:
+            continue
+        s = side[idx]
+        if s == 1:
+            if amap[90 + idx]:
+                if amap[idx]:
+                    risk_h += DEF_W[pc]
+                else:
+                    risk_h += UNDEF_W[pc]
+        else:
+            if amap[idx]:
+                if amap[90 + idx]:
+                    risk_c += DEF_W[pc]
+                else:
+                    risk_c += UNDEF_W[pc]
     score -= risk_h
     score += risk_c
     return score
@@ -977,7 +1148,24 @@ def core_see(int[::1] piece, int[::1] side, int fr, int fc, int tr, int tc):
     return _see(&piece[0], &side[0], fr, fc, tr, tc)
 
 def core_eval(int[::1] piece, int[::1] side, int base_ply):
+    """evaluate(board, include_mobility=False)."""
     global g_base_ply, h_top
     g_base_ply = base_ply
     h_top = 0
     return _evaluate(&piece[0], &side[0])
+
+
+cdef int MOBBUF[1024]
+
+def core_eval_mob(int[::1] piece, int[::1] side, int base_ply):
+    """evaluate(board, include_mobility=True).
+
+    Counts both sides' pseudo-moves in C rather than materialising two Python
+    lists of Move tuples purely to take their length.
+    """
+    global g_base_ply, h_top
+    g_base_ply = base_ply
+    h_top = 0
+    cdef int mob = _gen_pseudo(&piece[0], &side[0], 1, MOBBUF)
+    mob -= _gen_pseudo(&piece[0], &side[0], 2, MOBBUF)
+    return _evaluate(&piece[0], &side[0]) + 2 * mob
