@@ -1,0 +1,99 @@
+name: pages
+
+# Publishes the board UI to GitHub Pages with the engine running inside the
+# browser under WebAssembly, so the site needs no backend of its own.
+#
+# To turn it on: repository Settings -> Pages -> Source: "GitHub Actions".
+# Do NOT pick "Deploy from a branch"; the site is assembled here, not committed.
+#
+# Only main deploys. Feature branches would publish over the live site, and
+# pull requests cannot deploy at all -- an unconditional deploy job there just
+# shows up as a red X on every PR. The site build itself is covered by
+# tests/test_web_build.py, which runs on every branch.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it half-published.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      pages_enabled: ${{ steps.pages_check.outputs.enabled }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Assemble the site
+        run: python web/build_site.py site
+      - name: Check the shipped engine really is importable without extensions
+        env:
+          JANGGI_NO_ACCEL: "1"
+        run: |
+          cd site
+          python - <<'PY'
+          import sys
+          sys.path.insert(0, ".")
+          import engine_api
+          start = engine_api.api_new({"cho": "msm_s", "han": "msm_s"})
+          assert start["board"][0][0] == "hC", start["board"][0][0]
+          legal = engine_api.api_legal({"board": start["board"], "fr": 6, "fc": 0})
+          assert {(m["tr"], m["tc"]) for m in legal["moves"]} == {(5, 0), (6, 1)}
+          out = engine_api.api_analyze({"board": start["board"], "side": "cho", "time": 1.0})
+          assert out["move"] is not None and out["engine"] == "browser"
+          print("browser API ok:", out["move"], "depth", out["depthReached"])
+          PY
+
+      # deploy-pages fails with a bare 404 in about a second when Pages has
+      # never been switched on, which reads as "the build is broken". Ask first
+      # and say what to do instead.
+      - name: Is GitHub Pages switched on?
+        id: pages_check
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/pages")
+          if [ "$code" = "200" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "Pages is enabled; deploying." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::GitHub Pages is not enabled for this repository, so there is nothing to deploy to. Enable it at Settings -> Pages -> Source: \"GitHub Actions\", then re-run this workflow."
+            {
+              echo "### Site built, not published"
+              echo
+              echo "GitHub Pages is not enabled for this repository (the Pages API answered \`$code\`)."
+              echo
+              echo "Turn it on at **Settings → Pages → Source: \"GitHub Actions\"** —"
+              echo "not \"Deploy from a branch\", since the site is assembled by this"
+              echo "workflow rather than committed. Then re-run this workflow."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    if: needs.build.outputs.pages_enabled == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

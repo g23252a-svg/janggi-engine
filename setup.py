@@ -8,7 +8,6 @@ from setuptools import setup, find_packages, Extension
 PYX = [
     ("janggi._attack",   "janggi/_attack.pyx"),
     ("janggi._movegen",  "janggi/_movegen.pyx"),
-    ("janggi._fasteval", "janggi/_fasteval.pyx"),
     ("janggi._core",     "janggi/_core.pyx"),
 ]
 
@@ -25,9 +24,15 @@ except Exception as e:  # noqa
 
 setup(
     name="janggi-engine",
-    version="0.2.0",
+    version="0.3.0",
     description="Korean chess (Janggi) engine with a Cython search core.",
     python_requires=">=3.10",
     packages=find_packages(include=["janggi*"]),
     ext_modules=ext_modules,
+    extras_require={
+        # README tells people to `pip install -e ".[dev]"`; without this that
+        # silently installs nothing extra.
+        "dev": ["pytest>=7.0", "cython>=3.0"],
+        "web": ["flask>=3.0", "gunicorn>=21.0"],
+    },
 )

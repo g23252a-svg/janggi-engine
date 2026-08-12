@@ -29,7 +29,7 @@ def encode_board(board: Board) -> list[list[list[float]]]:
     """Return a [16][10][9] nested list of floats. (Kept as plain lists so this
     module needs no numpy/torch; the training script converts to a tensor.)"""
     planes = [[[0.0] * COLS for _ in range(ROWS)] for _ in range(N_PLANES)]
-    g = board.grid
+    g = board._g
     for r in range(ROWS):
         for c in range(COLS):
             p = g[r][c]

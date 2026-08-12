@@ -23,7 +23,7 @@ def _attackers_of(board: Board, r: int, c: int, side: int) -> list[tuple[int, in
     attackers = []
     for mv in board.generate_pseudo(side):
         if mv.tr == r and mv.tc == c:
-            piece = board.grid[mv.fr][mv.fc]
+            piece = board._g[mv.fr][mv.fc]
             if piece is not None:
                 attackers.append((PIECE_VALUE[piece[0]], mv.fr, mv.fc))
     return attackers
@@ -35,11 +35,11 @@ def see(board: Board, mv: Move) -> int:
 
     Positive = good for the mover. Non-captures return 0.
     """
-    target = board.grid[mv.tr][mv.tc]
+    target = board._g[mv.tr][mv.tc]
     if target is None:
         return 0  # not a capture
 
-    mover = board.grid[mv.fr][mv.fc]
+    mover = board._g[mv.fr][mv.fc]
     if mover is None:
         return 0
     side = mover[1]
@@ -60,7 +60,7 @@ def see(board: Board, mv: Move) -> int:
             # Recapturing wins the piece currently on the square.
             gain.append(on_square_value - gain[-1])
             on_square_value = attackers[0][0]
-            board.make(Move(fr, fc, mv.tr, mv.tc, board.grid[mv.tr][mv.tc][0]))
+            board.make(Move(fr, fc, mv.tr, mv.tc, board._g[mv.tr][mv.tc][0]))
             captured_count += 1
             attacker_side = -attacker_side
         for _ in range(captured_count):
