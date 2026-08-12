@@ -1,0 +1,65 @@
+name: pages
+
+# Publishes the board UI to GitHub Pages with the engine running inside the
+# browser under WebAssembly, so the site needs no backend of its own.
+#
+# To turn it on: repository Settings -> Pages -> Source: "GitHub Actions".
+# Do NOT pick "Deploy from a branch"; the site is assembled here, not committed.
+
+on:
+  push:
+    branches:
+      - main
+      - claude/janggi-engine-major-improvements-hnc0a6
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it half-published.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Assemble the site
+        run: python web/build_site.py site
+      - name: Check the shipped engine really is importable without extensions
+        env:
+          JANGGI_NO_ACCEL: "1"
+        run: |
+          cd site
+          python - <<'PY'
+          import sys
+          sys.path.insert(0, ".")
+          import engine_api
+          start = engine_api.api_new({"cho": "msm_s", "han": "msm_s"})
+          assert start["board"][0][0] == "hC", start["board"][0][0]
+          legal = engine_api.api_legal({"board": start["board"], "fr": 6, "fc": 0})
+          assert {(m["tr"], m["tc"]) for m in legal["moves"]} == {(5, 0), (6, 1)}
+          out = engine_api.api_analyze({"board": start["board"], "side": "cho", "time": 1.0})
+          assert out["move"] is not None and out["engine"] == "browser"
+          print("browser API ok:", out["move"], "depth", out["depthReached"])
+          PY
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

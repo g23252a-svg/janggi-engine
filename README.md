@@ -131,6 +131,35 @@ What that measurement currently says, at an equal 60k nodes per move:
 | late move reductions | 60.0% of 40 | better, not significant at this sample |
 | null-move pruning | 48.3% of 60 | no measurable effect — untuned, retest it |
 
+## Play it in the browser (GitHub Pages)
+
+The board UI is published as a static site with the engine running **inside the
+page**, compiled to WebAssembly via Pyodide — no server, nothing to install,
+just open the URL.
+
+To switch it on: repository **Settings → Pages → Source: "GitHub Actions"**.
+Not "Deploy from a branch" — the site is assembled by `.github/workflows/pages.yml`,
+not committed. The first push after that publishes to
+`https://<user>.github.io/janggi-engine/`.
+
+Two things to know about the in-browser engine:
+
+- WebAssembly cannot load the Cython extensions, so it runs the pure-Python
+  fallback: a few plies shallower than a real deployment. Fine for studying a
+  position, not the engine at full strength.
+- The page has a box for an engine server URL. Paste the address of a
+  deployment (Railway, or `python server.py` on your own machine) and every
+  analysis request goes there instead, at full speed. The setting is
+  remembered in the browser.
+
+The published page is the same `templates/index.html` the Flask server renders
+— the build injects one script tag rather than keeping a second copy, so the
+two cannot drift. Build it locally with:
+
+```bash
+python web/build_site.py site && python -m http.server -d site 8000
+```
+
 ## Web server / Railway deployment
 
 A Flask server (`server.py`) exposes an analysis API and serves a board UI.
@@ -183,12 +212,17 @@ janggi/
   _movegen.pyx  compiled move generator
 server.py       Flask web server (analysis API + UI)
 templates/
-  index.html    board front-end
+  index.html    board front-end (served by Flask AND published to Pages)
+web/
+  build_site.py    assembles the GitHub Pages site
+  browser-engine.js  answers /api/ calls from Pyodide instead of a server
+  engine_api.py    the analysis API without a web framework
 tests/
   test_engine.py   rules, make/unmake, Zobrist, engine sanity
   test_parity.py   perft references, Python/Cython equality, board invariants
   test_tactics.py  certified forced wins, incl. with each pruning pass disabled
   test_server.py   web API behaviour and input validation
+  test_web_build.py  the Pages build and its in-browser API
 ```
 
 ## Tests
