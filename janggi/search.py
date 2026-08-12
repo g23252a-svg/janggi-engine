@@ -1,18 +1,21 @@
 """Search: the part that actually makes the engine strong.
 
-Techniques implemented here:
-  * Negamax alpha-beta pruning.
-  * Iterative deepening (search depth 1, 2, 3 ... up to a limit or time budget),
-    which gives a usable move at every step and feeds the transposition table
-    and move ordering for the next, deeper pass.
-  * Zobrist hashing + a transposition table to avoid re-searching positions
-    reached by different move orders.
-  * Quiescence search: at the leaves, keep searching captures until the
-    position is "quiet", which removes the horizon effect on exchanges.
-  * Move ordering: transposition-table best move first, then captures ordered
-    by MVV-LVA (most valuable victim, least valuable attacker).
+The public entry point is ``Engine.search(board, side, ...)``. Where the work
+happens depends on how the engine was built:
 
-The public entry point is `Engine.search(board, side, ...)`.
+* Normally the compiled core in ``_core.pyx`` runs the entire search, root
+  included -- iterative deepening with aspiration windows, a transposition
+  table, principal variation search, null-move / futility / late-move pruning,
+  late move reductions, check extensions, killers, counter-moves, history,
+  quiescence with SEE and delta pruning, and repetition detection.
+* If the extensions are not built, or a custom Python ``evaluator`` is supplied
+  (the neural-network bridge, which the compiled core cannot call into), the
+  pure-Python implementation below runs instead. It is the same idea at a
+  fraction of the speed.
+
+``SearchOptions`` switches individual techniques off so a change can be
+measured against the same engine rather than against an intuition -- see
+``janggi/match.py``.
 """
 
 from __future__ import annotations

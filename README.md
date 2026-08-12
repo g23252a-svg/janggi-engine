@@ -1,31 +1,39 @@
 # Janggi Engine (장기 엔진)
 
-A Korean chess (Janggi) engine written in pure Python, built for study and
-analysis. It implements the standard strengthening techniques used by real
-board-game engines, with a clean rules core that the search and evaluation
-both trust as the single source of truth.
+A Korean chess (Janggi) engine: a readable pure-Python rules core, a compiled
+Cython search that runs the same rules at speed, and a small web front end for
+studying positions.
 
 This is a **practice and analysis** tool: run it to study positions, check the
 best move for either side, or watch it play itself. It is not meant for use
 against live human opponents on online services.
 
-## What makes it reasonably strong
+## What it does
 
-- **Alpha-beta negamax** search with beta cutoffs.
-- **Iterative deepening** — searches depth 1, 2, 3 … so there is always a move
-  ready, and each pass warms up move ordering and the transposition table for
-  the next.
-- **Transposition table** with **Zobrist hashing** — positions reached by
-  different move orders are searched once, not repeatedly.
-- **Quiescence search** — at the leaves it keeps resolving captures until the
-  position is quiet, which removes the "horizon effect" where a shallow search
-  mis-reads the middle of an exchange.
-- **Move ordering** — transposition-table best move first, then captures by
-  MVV-LVA (most valuable victim, least valuable attacker), which makes
-  alpha-beta prune far more.
-- **Janggi-specific evaluation** — material plus soldier advancement, central
-  control, line-piece mobility, general safety / guard cover, and a bonus for
-  cannons that have a usable screen.
+- **Alpha-beta negamax with iterative deepening**, so there is always a move
+  ready and each pass orders the next one.
+- **Aspiration windows** around the previous iteration's score, widening on
+  failure.
+- **Principal variation search** — after the first move, a null window is
+  enough to show the rest are worse.
+- **Transposition table** with Zobrist hashing, depth-preferred replacement,
+  and mate scores rebased onto the probing ply.
+- **Null-move pruning.** Passing is a legal option in Janggi, so the usual
+  chess worry about zugzwang does not apply the same way here.
+- **Futility, reverse futility and late-move pruning**, plus late move
+  reductions from a depth × move-index table.
+- **Quiescence search** with SEE and delta pruning: keeps resolving captures
+  until the position is quiet, so a shallow search cannot misread the middle of
+  an exchange.
+- **Move ordering** — transposition move, then captures by static exchange
+  evaluation, then killers, counter-moves and history.
+- **Check extensions** on a per-branch budget.
+- **Repetition detection inside the search**, so a repeated position scores as
+  the draw it is rather than being re-evaluated as something new.
+- **Janggi-specific evaluation** — material, soldier advancement, central
+  control, line-piece mobility, general safety and guard cover, cannon screens,
+  loose-piece risk, and an endgame lock onto official material points.
+- **Opening book** built from recorded games (기보).
 
 ## Rules implemented
 
@@ -33,39 +41,43 @@ Full standard Janggi movement: chariot (車) including palace diagonals, cannon
 (包/砲) screen-jump rules and the "cannon cannot jump or capture a cannon"
 restriction, horse (馬) and elephant (象) leg-blocking, palace confinement for
 general and guard, soldiers (졸/兵) that never move backward, the
-facing-generals (빅장) prohibition, and check / no-legal-move detection. Four
+facing-generals (빅장) position, and check / no-legal-move detection. Four
 starting formations are selectable for each side: 마상상마, 상마상마, 마상마상,
 상마마상.
 
+Note on 빅장: facing generals is treated as a legal position, not as check and
+not as an illegal move. `Board.generals_face()` detects it for callers that
+want to apply a draw rule.
+
 ## Install
 
-No third-party runtime dependencies — Python 3.10+ standard library only.
+The engine runs on the Python standard library alone. Building the Cython
+extensions is optional but strongly recommended — they are roughly two orders
+of magnitude faster, and everything falls back to pure Python automatically if
+they are missing.
 
 ```bash
 git clone https://github.com/<your-username>/janggi-engine.git
 cd janggi-engine
-pip install -e ".[dev]"   # installs pytest for the test suite
+pip install -e ".[dev]"          # pytest for the test suite
+python setup.py build_ext --inplace   # optional, much faster
 ```
 
 ## Usage
 
-Analyze the opening for Cho at depth 4:
-
-```bash
-python -m janggi.cli --analyze cho --depth 4
-```
-
-Use a time budget per move instead of a fixed depth (recommended — iterative
+Analyze the opening for Cho with a time budget (recommended — iterative
 deepening goes as deep as it can in the time given):
 
 ```bash
-python -m janggi.cli --analyze han --time 3.0 --han-formation smsm
+python -m janggi.cli --analyze cho --time 3
+python -m janggi.cli --analyze han --time 3 --han-formation smsm
 ```
 
-Watch the engine play itself:
+Watch the engine play itself, and benchmark it:
 
 ```bash
-python -m janggi.cli --selfplay --moves 30 --time 1.0
+python -m janggi.cli --selfplay --moves 40 --time 1.0
+python -m janggi.cli --bench
 ```
 
 ### As a library
@@ -76,35 +88,72 @@ from janggi import Board, Engine, CHO
 board = Board.standard(cho_formation="msm_s", han_formation="smsm")
 engine = Engine(max_depth=20, time_limit=3.0)   # depth cap + time budget
 move, score = engine.search(board, CHO)
-print(move, score)
+print(move, score, engine.stats.pv)
 board.make(move)
 ```
+
+`board.grid[r][c]` reads and writes squares directly and keeps the compiled
+accelerators, the Zobrist key and the tracked general positions in step, so
+setting up a position by hand is safe:
+
+```python
+board = Board()
+board.grid[8][4] = ("K", CHO)
+board.grid[1][4] = ("K", HAN)
+board.grid[8][0] = ("C", HAN)
+assert board.in_check(CHO)
+```
+
+## Measuring a change
+
+Nothing about search or evaluation should be changed on intuition alone. The
+match runner plays two engine configurations against each other in
+colour-swapped pairs from seeded openings, and reports a score with a
+confidence interval:
+
+```bash
+# does null-move pruning actually help, at an equal node budget?
+python -m janggi.match --games 100 --nodes 150000 --a "" --b "nmp=0"
+
+# more depth for one side
+python -m janggi.match --games 40 --depth-a 10 --depth-b 8
+```
+
+Every technique can be switched off individually — `tt`, `lmr`, `ext`, `nmp`,
+`pvs`, `fut`, `lmp`, `asp`, `rep`, plus `extbudget=` and `nodes=`. The same
+options are available in code through `SearchOptions`.
 
 ## Web server / Railway deployment
 
 A Flask server (`server.py`) exposes an analysis API and serves a board UI.
-
-Run locally:
 
 ```bash
 pip install -r requirements.txt
 python server.py            # http://localhost:8080
 ```
 
-Endpoints: `GET /` (board UI), `POST /api/new` (start position for chosen
-formations), `POST /api/analyze` (best move + score for a side), `GET /health`.
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /` | board UI |
+| `GET /health` | liveness probe |
+| `POST /api/new` | start position for the chosen formations |
+| `POST /api/analyze` | best move, score, depth, node count and principal variation |
+| `POST /api/legal` | legal moves for one square, repetition-aware |
+| `POST /api/repetition` | how many times the current position has occurred |
+| `POST /api/score` | official material score (점수제) |
+| `POST /api/gibo/validate` | validate an uploaded game record |
+
+Malformed input is answered with a 400 and a message. Per-request work is
+capped by `MAX_TIME` / `MAX_DEPTH` in `server.py`, and a lock serialises
+searches because the compiled core keeps its tables in process-global memory.
 
 ### Deploy on Railway
 
-The repo includes `Procfile`, `railway.json`, and `runtime.txt`. On Railway:
-
-1. New Project → Deploy from GitHub repo → pick `janggi-engine`.
-2. Railway auto-detects Python, installs `requirements.txt`, and runs the
-   `gunicorn` start command. No env vars are required (`PORT` is provided).
-3. Open the generated domain to use the analyzer.
-
-Per-request work is capped (`MAX_TIME`, `MAX_DEPTH` in `server.py`) so a single
-analysis cannot hang the instance.
+The repo includes `Procfile`, `railway.json`, `nixpacks.toml` and
+`runtime.txt`. On Railway: New Project → Deploy from GitHub repo → pick
+`janggi-engine`. The build step compiles the Cython extensions in place; if
+that fails the app still starts on the pure-Python fallback, just slower. No
+env vars are required (`PORT` is provided).
 
 ## Project layout
 
@@ -112,37 +161,68 @@ analysis cannot hang the instance.
 janggi/
   board.py      rules core: board, move generation, legality (single source of truth)
   evaluate.py   static evaluation (all positional knowledge lives here)
-  search.py     iterative deepening, TT + Zobrist, quiescence, alpha-beta
-  cli.py        command-line demo
+  search.py     Engine, SearchOptions, and the pure-Python search
+  see.py        static exchange evaluation
+  repetition.py repetition bookkeeping over Zobrist keys
+  score.py      official Janggi point scoring (점수제)
+  book.py       opening book built from game records
+  gibo.py       game records (기보): save, load, replay, validate
+  match.py      A/B match runner for measuring engine changes
+  mcts.py       PUCT search for the neural self-play loop
+  cli.py        command line: analyze, self-play, bench
+  _core.pyx     compiled search core (search, evaluation, SEE, perft)
+  _attack.pyx   compiled attack test
+  _movegen.pyx  compiled move generator
 server.py       Flask web server (analysis API + UI)
 templates/
   index.html    board front-end
 tests/
-  test_engine.py  rules tests, perft, make/unmake, Zobrist, engine sanity
+  test_engine.py   rules, make/unmake, Zobrist, engine sanity
+  test_parity.py   perft references, Python/Cython equality, board invariants
+  test_tactics.py  certified forced wins, incl. with each pruning pass disabled
+  test_server.py   web API behaviour and input validation
 ```
 
 ## Tests
 
 ```bash
-python -m pytest tests/ -q
+python -m pytest tests/ -q                    # compiled path
+JANGGI_NO_ACCEL=1 python -m pytest tests/ -q  # pure-Python fallback
 ```
 
-## Performance notes
+`JANGGI_NO_ACCEL=1` forces the fallback so one suite covers both
+implementations. CI runs both, and asserts the extensions actually loaded in
+the compiled job — a silent build failure otherwise looks exactly like a pass.
 
-Pure Python is the bottleneck. A fixed depth-4 search of the (capture-heavy)
-opening takes a few seconds; using `--time` keeps each move bounded and lets
-the engine reach deeper in quieter midgame positions. Natural next steps to go
-faster and stronger: killer-move and history heuristics, null-move pruning, a
-bitboard or array-based board for faster make/unmake, an opening book, and an
-endgame database.
+## Performance
+
+Opening position, fixed depth, on a 2026 cloud vCPU:
+
+| depth | nodes | time |
+| ---: | ---: | ---: |
+| 8 | 193k | 0.9s |
+| 10 | 584k | 2.5s |
+| 12 | 2.7M | 12.0s |
+
+For comparison, the same depth-8 search cost 1.58M nodes and 8.0s before the
+search rewrite and the attack-map evaluator — the same wall clock now reaches
+about four plies deeper. Played head to head at an equal 0.5 s per move, over
+15 seeded openings each played twice with colours swapped:
+
+```
+NEW vs OLD (commit 9b5a7c3): +30 =0 -0 of 30
+```
 
 ## Roadmap
 
-- [ ] Killer moves + history heuristic for better ordering
-- [ ] Null-move pruning
-- [ ] Opening book from recorded games
-- [ ] Faster board representation
-- [ ] Optional UI / web front-end
+- [x] Killer moves + history heuristic for better ordering
+- [x] Null-move pruning
+- [x] Opening book from recorded games
+- [x] Faster board representation
+- [x] Web front-end
+- [ ] Tapered evaluation by game phase
+- [ ] Endgame tablebase for common material
+- [ ] Cross-version match harness in CI to catch strength regressions
 
 ## License
 

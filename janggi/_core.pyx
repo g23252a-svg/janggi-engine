@@ -1,17 +1,20 @@
 # cython: language_level=3, boundscheck=False, wraparound=False, cdivision=True
-"""Self-contained Cython search core: negamax subtree on flat int arrays.
+"""Cython search core: the whole search, on flat int arrays.
 
-Python keeps the root (iterative deepening, ordering carry-over, forbidden
-moves, capture credit, mate/blunder guards, time budget). This module runs the
-subtree below each root move with zero Python objects in the hot path.
+core_search() owns iterative deepening, aspiration windows, the root move list
+and its ordering carry-over, the principal variation, and the alpha-beta tree
+below it -- with no Python objects anywhere in the hot path. Python supplies
+the position, the time or node budget, root moves to avoid (repetition), and
+the game position keys the search needs to recognise a repetition.
 
-Encodings match _attack/_movegen/_fasteval:
+Encodings match _attack / _movegen:
   piece: 0 empty, 1 C, 2 P, 3 M, 4 S, 5 J, 6 K, 7 G
   side : 0 none, 1 HAN, 2 CHO   (enemy of s is 3-s)
 
-All piece logic is transliterated from the verified Python sources
-(board.py / evaluate.py / see.py / search.py) and differentially verified:
-perft equality, fixed-depth score equality, engine A/B.
+Every piece rule here is a transliteration of the verified Python sources
+(board.py / evaluate.py / see.py) and tests/test_parity.py holds them together:
+perft equality, square-for-square attack equality, exact evaluation and SEE
+equality. Change one side of that pair and the tests will say so.
 """
 
 import time as _pytime
