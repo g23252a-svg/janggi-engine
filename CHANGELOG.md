@@ -19,6 +19,24 @@ Opening position, fixed depth, same machine:
 
 The same wall clock now reaches roughly four plies deeper.
 
+### Measured, not assumed
+
+Each technique against the same engine with only that technique disabled,
+colour-swapped paired games at an equal 60k node budget per move:
+
+| change | score for "on" | verdict |
+| --- | ---: | --- |
+| futility + late-move pruning | 65.0% of 40 (+108 elo) | clearly better |
+| late move reductions | 60.0% of 40 (+70 elo) | better, not significant at this sample |
+| null-move pruning | 48.3% of 60 (-12 elo) | **no measurable effect** |
+
+Null-move pruning is kept on because the 30-0 headline result above was
+measured with it on, and shipping a configuration that was never played end to
+end would make that number describe something other than the engine. But it is
+not earning its keep on this evidence, and it is the first thing to re-test --
+`--b "nmp=0"` -- if someone picks this up. Its reduction formula
+(`R = 3 + depth/5`) has never been tuned.
+
 ### Fixed
 
 - **The board and its accelerator arrays could silently disagree.** A `Board`

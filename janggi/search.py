@@ -313,15 +313,6 @@ class Engine:
         best_score = -MATE * 2
         scored: list[tuple[int, Move]] = []
         for mv in moves:
-            # Reward clearly favorable root captures before making the move.
-            # Example: cannon takes chariot, even if the cannon can be
-            # recaptured, is still a favorable exchange.
-            capture_credit = 0
-            if mv.captured in ("C", "P", "M", "S", "G"):
-                capture_gain = see(board, mv)
-                if capture_gain > 0:
-                    capture_credit = min(900, capture_gain)
-
             board.make(mv)
             try:
                 if self._use_core:
@@ -336,10 +327,7 @@ class Engine:
                     except TimeoutError:
                         raise _Timeout()
                 else:
-                    score = -self._negamax(board, -side, depth - 1, -beta, -alpha)
-                score += capture_credit
-                # root risk guards removed: over-fit, weakened engine (verified 1:5 vs clean)
-                pass
+                    score = -self._negamax(board, -side, depth - 1, -beta, -alpha, 1)
             finally:
                 board.unmake()
             scored.append((score, mv))
@@ -354,6 +342,11 @@ class Engine:
         order = [mv for _, mv in scored]
 
         # --- Root-only tactical guards ------------------------------------
+        # A proven forced win needs no second-guessing: the material guard below
+        # would happily swap a mate for a move that leaves less hanging.
+        if best_score > MATE - 4096:
+            return best_score, best_move, order
+
         # First avoid a top move that allows immediate one-move checkmate.
         # This guard is intentionally post-root and best-move-first only, so it
         # does not multiply legal_moves() across every search node.
@@ -492,7 +485,8 @@ class Engine:
         return None
 
 
-    def _negamax(self, board: Board, side: int, depth: int, alpha: int, beta: int) -> int:
+    def _negamax(self, board: Board, side: int, depth: int, alpha: int,
+                 beta: int, ply: int = 0) -> int:
         self.stats.nodes += 1
         self._check_time()
 
@@ -514,12 +508,14 @@ class Engine:
             tt_move = entry.best
 
         if depth == 0:
-            return self._quiescence(board, side, alpha, beta)
+            return self._quiescence(board, side, alpha, beta, ply=ply)
 
         moves = self._ordered_moves(board, side, depth, tt_move)
         if not moves:
             # No legal move: in Janggi a side with no move loses (mate/stalemate).
-            return -MATE + (self.max_depth - depth)
+            # Scored by distance from the root, so a mate in one beats a mate in
+            # three instead of tying with it.
+            return -MATE + ply
 
         best_score = -MATE * 2
         best_move: Move | None = None
@@ -544,12 +540,12 @@ class Engine:
                         and mv.captured is None and not board.in_check(-side)):
                     reduce = 1
                 score = -self._negamax(
-                    board, -side, depth - 1 + extend - reduce, -beta, -alpha
+                    board, -side, depth - 1 + extend - reduce, -beta, -alpha, ply + 1
                 )
                 if reduce and score > alpha:
                     # Promising despite the reduction: verify at full depth.
                     score = -self._negamax(
-                        board, -side, depth - 1 + extend, -beta, -alpha
+                        board, -side, depth - 1 + extend, -beta, -alpha, ply + 1
                     )
             except _Timeout:
                 # Restore the check-extension token owned by this node. Normal
@@ -588,7 +584,8 @@ class Engine:
         return best_score
 
     def _quiescence(
-        self, board: Board, side: int, alpha: int, beta: int, qply: int = 0
+        self, board: Board, side: int, alpha: int, beta: int,
+        ply: int = 0, qply: int = 0
     ) -> int:
         """Resolve checks and captures until the position is legally quiet."""
         self.stats.qnodes += 1
@@ -630,9 +627,9 @@ class Engine:
                     continue
                 legal_found = True
                 if mv.captured == "K":
-                    return MATE
+                    return MATE - (ply + qply)
                 score = -self._quiescence(
-                    board, -side, -beta, -alpha, qply=qply + 1
+                    board, -side, -beta, -alpha, ply=ply, qply=qply + 1
                 )
             finally:
                 board.unmake()
@@ -641,7 +638,7 @@ class Engine:
             if score > alpha:
                 alpha = score
         if in_check and not legal_found:
-            return -MATE + qply
+            return -MATE + ply + qply
         return alpha
 
     # ------------------------------------------------------- move ordering

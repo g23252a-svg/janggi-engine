@@ -123,6 +123,14 @@ Every technique can be switched off individually — `tt`, `lmr`, `ext`, `nmp`,
 `pvs`, `fut`, `lmp`, `asp`, `rep`, plus `extbudget=` and `nodes=`. The same
 options are available in code through `SearchOptions`.
 
+What that measurement currently says, at an equal 60k nodes per move:
+
+| technique | score with it on | verdict |
+| --- | ---: | --- |
+| futility + late-move pruning | 65.0% of 40 | clearly better |
+| late move reductions | 60.0% of 40 | better, not significant at this sample |
+| null-move pruning | 48.3% of 60 | no measurable effect — untuned, retest it |
+
 ## Web server / Railway deployment
 
 A Flask server (`server.py`) exposes an analysis API and serves a board UI.

@@ -17,7 +17,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from janggi.board import Board, Move, HAN, CHO, ROWS, COLS  # noqa: E402
-from janggi.search import Engine, SearchOptions, MATE  # noqa: E402
+from janggi.search import Engine, SearchOptions, MATE, _HAVE_CORE  # noqa: E402
 
 from _mate_prover import mating_moves  # noqa: E402
 
@@ -162,6 +162,8 @@ def test_pruning_never_hides_a_forced_mate(spec):
 
     A pruning bug shows up here rather than as a mysteriously lost game.
     """
+    if not _HAVE_CORE:
+        pytest.skip("SearchOptions only steer the compiled core")
     options = SearchOptions.parse(spec)
     for case in MATE_IN_1:
         board = build(case["grid"], case["side"])
