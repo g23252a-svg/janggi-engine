@@ -202,7 +202,9 @@ def test_declines_the_poisoned_capture():
 
 def test_reports_a_principal_variation():
     board = Board.standard()
-    engine = Engine(max_depth=6)
+    # Time-bounded: what matters is that the PV is legal, not how deep it goes,
+    # and the pure-Python fallback would otherwise spend minutes here.
+    engine = Engine(max_depth=6, time_limit=2.0)
     move, _ = engine.search(board, CHO)
     pv = engine.stats.pv
     assert move is not None
@@ -223,7 +225,7 @@ def test_search_leaves_the_board_untouched():
     board = Board.standard()
     before = [list(row) for row in board.grid]
     before_hash = board.zobrist()
-    Engine(max_depth=8).search(board, CHO)
+    Engine(max_depth=8, time_limit=2.0).search(board, CHO)
     assert [list(row) for row in board.grid] == before
     assert board.zobrist() == before_hash
     assert board.side_to_move == CHO
