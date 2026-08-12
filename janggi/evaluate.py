@@ -52,7 +52,7 @@ def _general_exposure(board: Board, side: int) -> int:
     exposed = 0
     for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
         nr, nc = r + dr, c + dc
-        if in_palace(nr, nc, side) and board.grid[nr][nc] is None:
+        if in_palace(nr, nc, side) and board._g[nr][nc] is None:
             exposed += 1
     return exposed
 
@@ -75,7 +75,7 @@ def _king_attack_pressure(board: Board, side: int) -> int:
         if dr != 0 and dc != 0:
             if not (on_palace_diagonal(gr, gc) and on_palace_diagonal(nr, nc)):
                 continue
-        occ = board.grid[nr][nc]
+        occ = board._g[nr][nc]
         if occ is not None and occ[1] == side:
             continue
         if board.fast_is_attacked(nr, nc, enemy):
@@ -88,7 +88,7 @@ def _loose_piece_risk(board: Board, side: int) -> int:
     risk = 0
     for r in range(ROWS):
         for c in range(COLS):
-            p = board.grid[r][c]
+            p = board._g[r][c]
             if p is None or p[1] != side or p[0] == "K":
                 continue
             kind = p[0]
@@ -105,7 +105,7 @@ def _guards_alive(board: Board, side: int) -> int:
     count = 0
     for r in range(ROWS):
         for c in range(COLS):
-            p = board.grid[r][c]
+            p = board._g[r][c]
             if p is not None and p[1] == side and p[0] in ("G", "S"):
                 count += 1
     return count
@@ -115,7 +115,7 @@ def _cannon_has_screen(board: Board, r: int, c: int) -> bool:
     for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
         nr, nc = r + dr, c + dc
         while in_board(nr, nc):
-            t = board.grid[nr][nc]
+            t = board._g[nr][nc]
             if t is not None:
                 return t[0] != "P"
             nr += dr
@@ -124,6 +124,9 @@ def _cannon_has_screen(board: Board, r: int, c: int) -> bool:
 
 
 try:
+    from janggi.board import DISABLE_ACCEL as _NO_ACCEL
+    if _NO_ACCEL:
+        raise ImportError("accelerators disabled by JANGGI_NO_ACCEL")
     from janggi._fasteval import evaluate_c as _c_evaluate
     from janggi._movegen import generate_pseudo_c as _c_pseudo
     from janggi.board import _HAVE_CATTACK as _ACCEL_ARRAYS
@@ -146,7 +149,7 @@ def evaluate(board: Board, include_mobility: bool = True) -> int:
 def _py_evaluate(board: Board, include_mobility: bool = True) -> int:
     score = 0
     material_score = 0
-    g = board.grid
+    g = board._g
     for r in range(ROWS):
         for c in range(COLS):
             p = g[r][c]

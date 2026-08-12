@@ -27,6 +27,9 @@ from .evaluate import evaluate
 from .see import see
 
 try:
+    from .board import DISABLE_ACCEL as _NO_ACCEL
+    if _NO_ACCEL:
+        raise ImportError("accelerators disabled by JANGGI_NO_ACCEL")
     from janggi._core import core_reset, core_negamax, core_stats
     _HAVE_CORE = True
 except Exception:
@@ -39,35 +42,19 @@ EXACT, LOWER, UPPER = 0, 1, 2
 
 
 # ----------------------------------------------------------------- Zobrist
-_PIECE_INDEX = {k: i for i, k in enumerate("KCPMSGJ")}
-
-
-def _build_zobrist() -> dict:
-    rng = random.Random(20260619)  # fixed seed for reproducible hashing
-    table = {}
-    for r in range(ROWS):
-        for c in range(COLS):
-            for kind in _PIECE_INDEX:
-                for side in (HAN, CHO):
-                    table[(r, c, kind, side)] = rng.getrandbits(64)
-    table["side"] = rng.getrandbits(64)
-    return table
-
-
-_ZOBRIST = _build_zobrist()
+# The table itself now lives in board.py, which maintains the key incrementally
+# through make/unmake and every square write. These names are re-exported so
+# existing callers (repetition, book, tests) keep working unchanged.
+from .board import _PIECE_INDEX, _ZOBRIST, _build_zobrist  # noqa: F401
 
 
 def zobrist_hash(board: Board) -> int:
-    h = 0
-    g = board.grid
-    for r in range(ROWS):
-        for c in range(COLS):
-            p = g[r][c]
-            if p is not None:
-                h ^= _ZOBRIST[(r, c, p[0], p[1])]
-    if board.side_to_move == CHO:
-        h ^= _ZOBRIST["side"]
-    return h
+    """The board's Zobrist key.
+
+    O(1): boards keep the key up to date on every mutation instead of rescanning
+    all 90 squares per search node, which is what this used to cost.
+    """
+    return board.zobrist()
 
 
 @dataclass
@@ -730,7 +717,7 @@ class Engine:
     # ------------------------------------------------------- move ordering
     def _mvv_lva(self, board: Board, mv: Move) -> int:
         victim = PIECE_VALUE.get(mv.captured, 0) if mv.captured else 0
-        attacker_piece = board.grid[mv.fr][mv.fc]
+        attacker_piece = board._g[mv.fr][mv.fc]
         attacker = PIECE_VALUE.get(attacker_piece[0], 0) if attacker_piece else 0
         return victim * 10 - attacker
 
