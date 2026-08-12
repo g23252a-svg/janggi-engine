@@ -5,12 +5,15 @@ name: pages
 #
 # To turn it on: repository Settings -> Pages -> Source: "GitHub Actions".
 # Do NOT pick "Deploy from a branch"; the site is assembled here, not committed.
+#
+# Only main deploys. Feature branches would publish over the live site, and
+# pull requests cannot deploy at all -- an unconditional deploy job there just
+# shows up as a red X on every PR. The site build itself is covered by
+# tests/test_web_build.py, which runs on every branch.
 
 on:
   push:
-    branches:
-      - main
-      - claude/janggi-engine-major-improvements-hnc0a6
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -26,6 +29,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      pages_enabled: ${{ steps.pages_check.outputs.enabled }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -50,12 +55,41 @@ jobs:
           assert out["move"] is not None and out["engine"] == "browser"
           print("browser API ok:", out["move"], "depth", out["depthReached"])
           PY
+
+      # deploy-pages fails with a bare 404 in about a second when Pages has
+      # never been switched on, which reads as "the build is broken". Ask first
+      # and say what to do instead.
+      - name: Is GitHub Pages switched on?
+        id: pages_check
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/pages")
+          if [ "$code" = "200" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "Pages is enabled; deploying." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::GitHub Pages is not enabled for this repository, so there is nothing to deploy to. Enable it at Settings -> Pages -> Source: \"GitHub Actions\", then re-run this workflow."
+            {
+              echo "### Site built, not published"
+              echo
+              echo "GitHub Pages is not enabled for this repository (the Pages API answered \`$code\`)."
+              echo
+              echo "Turn it on at **Settings → Pages → Source: \"GitHub Actions\"** —"
+              echo "not \"Deploy from a branch\", since the site is assembled by this"
+              echo "workflow rather than committed. Then re-run this workflow."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
 
   deploy:
     needs: build
+    if: needs.build.outputs.pages_enabled == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
