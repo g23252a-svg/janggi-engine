@@ -30,10 +30,12 @@ try:
     from .board import DISABLE_ACCEL as _NO_ACCEL
     if _NO_ACCEL:
         raise ImportError("accelerators disabled by JANGGI_NO_ACCEL")
-    from janggi._core import core_reset, core_negamax, core_stats
+    from janggi._core import core_reset, core_negamax, core_search, core_stats
     _HAVE_CORE = True
 except Exception:
     _HAVE_CORE = False
+
+_CODE_PIECE = {1: "C", 2: "P", 3: "M", 4: "S", 5: "J", 6: "K", 7: "G"}
 
 MATE = 1_000_000
 
@@ -71,17 +73,78 @@ class SearchStats:
     qnodes: int = 0
     tt_hits: int = 0
     depth_reached: int = 0
+    #: Principal variation as (fr, fc, tr, tc) tuples, best line first.
+    pv: list[tuple[int, int, int, int]] = field(default_factory=list)
+    elapsed: float = 0.0
+
+    @property
+    def total_nodes(self) -> int:
+        return self.nodes + self.qnodes
+
+    def nps(self) -> float:
+        return self.total_nodes / self.elapsed if self.elapsed > 0 else 0.0
+
+
+@dataclass(frozen=True)
+class SearchOptions:
+    """Individually switchable search techniques.
+
+    Every one of these is on by default; they exist as flags so a change can be
+    measured against the same engine with the feature disabled
+    (``python -m janggi.match --a "" --b "nmp=0"``) instead of against a guess.
+    """
+
+    use_tt: bool = True             # transposition table
+    use_lmr: bool = True            # late move reductions
+    use_ext: bool = True            # check extensions
+    use_nmp: bool = True            # null-move pruning
+    use_pvs: bool = True            # principal variation search
+    use_futility: bool = True       # futility + reverse futility
+    use_lmp: bool = True            # late move pruning
+    use_aspiration: bool = True     # aspiration windows at the root
+    use_repetition: bool = True     # repetition detection inside the search
+    ext_budget: int = 3             # extra plies a single branch may spend
+    node_limit: int = 0             # 0 = unlimited; used for reproducible A/B
+
+    _ALIASES = {
+        "tt": "use_tt", "lmr": "use_lmr", "ext": "use_ext", "nmp": "use_nmp",
+        "pvs": "use_pvs", "futility": "use_futility", "fut": "use_futility",
+        "lmp": "use_lmp", "asp": "use_aspiration", "aspiration": "use_aspiration",
+        "rep": "use_repetition", "repetition": "use_repetition",
+        "extbudget": "ext_budget", "nodes": "node_limit",
+    }
+
+    @classmethod
+    def parse(cls, spec: str) -> "SearchOptions":
+        """Build options from a "nmp=0,lmr=0,nodes=200000" style string."""
+        values: dict[str, int | bool] = {}
+        for chunk in (spec or "").split(","):
+            chunk = chunk.strip()
+            if not chunk:
+                continue
+            if "=" not in chunk:
+                raise ValueError(f"option {chunk!r} must look like key=value")
+            key, _, raw = chunk.partition("=")
+            key = key.strip().lower()
+            field_name = cls._ALIASES.get(key, key)
+            if field_name not in cls.__dataclass_fields__:
+                raise ValueError(f"unknown search option {key!r}")
+            if field_name in ("ext_budget", "node_limit"):
+                values[field_name] = int(raw)
+            else:
+                values[field_name] = raw.strip() not in ("0", "false", "False", "no")
+        return cls(**values)
 
 
 class Engine:
     EXT_BUDGET = 3  # check-extension ply budget per branch (0 disables)
-    _ROOT_TOPK = 10  # deep root passes only search this many top shallow-ranked moves
 
     def __init__(
         self,
         max_depth: int = 6,
         time_limit: float | None = None,
         evaluator: Callable[[Board], int] | None = None,
+        options: "SearchOptions | None" = None,
     ) -> None:
         """Create a search engine.
 
@@ -92,6 +155,7 @@ class Engine:
         """
         self.max_depth = max_depth
         self.time_limit = time_limit
+        self.options = options or SearchOptions()
         self._evaluator = evaluator
         self._use_core = _HAVE_CORE and evaluator is None
         self.tt: dict[int, TTEntry] = {}
@@ -102,6 +166,8 @@ class Engine:
         self._killers: dict[int, list[tuple[int, int, int, int]]] = {}
         # History heuristic: cumulative cutoff score per (side, move) tuple.
         self._history: dict[tuple[int, int, int, int, int], int] = {}
+        # Moves played in the game before this search; fixed for its duration.
+        self._game_ply = 0
 
     # --------------------------------------------------------- public API
     def search(
@@ -109,48 +175,48 @@ class Engine:
         board: Board,
         side: int,
         forbidden_moves: set[tuple[int, int, int, int]] | None = None,
+        history_hashes: list[int] | None = None,
+        game_ply: int | None = None,
     ) -> tuple[Move | None, int]:
         """Return (best_move, score_from_side's_perspective).
 
         forbidden_moves: root moves (as (fr,fc,tr,tc) tuples) the engine must
-        not choose — used to exclude moves that would cause a 3rd repetition.
+            not choose — used to exclude moves that would cause a 3rd repetition.
+        history_hashes: Zobrist keys of game positions since the last capture,
+            so the search can recognise a repetition instead of chasing one.
+        game_ply: moves played in the game so far. Only the endgame score-lock
+            uses it; it defaults to the board's own history length, which is
+            wrong for a board rebuilt from a posted position (its history is
+            empty), so callers that know better should pass it.
         """
         self._forbidden = forbidden_moves or set()
         self.stats = SearchStats()
         self._killers = {}
         self._history = {}
+        opts = self.options
+        if game_ply is None:
+            game_ply = len(board._history)
+        started = time.time()
         # Total extra plies the search may spend on check-extensions in any one
         # branch. Caps tree growth so sharp positions go deeper without the whole
-        # search blowing up. Read from the class attribute so it can be tuned or
-        # disabled (0) for A/B comparison.
-        self._ext_budget = self.EXT_BUDGET
+        # search blowing up.
+        self._ext_budget = opts.ext_budget
+
         if self._use_core:
-            core_reset(self.max_depth, self.EXT_BUDGET)
-        self._deadline = (time.time() + self.time_limit) if self.time_limit else None
+            move, score = self._core_search(board, side, game_ply, history_hashes)
+            self.stats.elapsed = time.time() - started
+            return move, score
+
+        self._deadline = (started + self.time_limit) if self.time_limit else None
+        self._game_ply = game_ply
         best_move: Move | None = None
         best_score = 0
         # Iterative deepening. A depth is only accepted once it COMPLETES; if the
         # time limit interrupts a depth partway through, that partial result is
-        # discarded and we keep the last fully-searched depth. This keeps the
-        # recommendation deterministic — the same position always yields the
-        # same move for a given completed depth, instead of flickering based on
-        # exactly how far an interrupted pass happened to get.
-        # Candidate narrowing for deep iterations. Searching every root move to
-        # full depth is what made heavy midgames overrun the clock (42 legal
-        # moves -> depth 5 took ~55s, so in practice only depth 4 completed and a
-        # worse move was played). Instead, once we have a shallow ranking we
-        # restrict the deeper, expensive passes to the top-K moves from the
-        # previous iteration. The good move is virtually always already near the
-        # top of the shallow ranking (verified: the key defensive move sat at
-        # rank 2-4 of 42 at depth 2-3), so this loses almost nothing in quality
-        # while letting the full target depth actually finish in time.
-        prev_order: list[Move] | None = None
+        # discarded and we keep the last fully-searched depth.
         for depth in range(1, self.max_depth + 1):
-            shortlist = None
-            if prev_order is not None and depth >= 4:
-                shortlist = prev_order[: self._ROOT_TOPK]
             try:
-                score, move, prev_order = self._root(board, side, depth, shortlist)
+                score, move, _order = self._root(board, side, depth)
             except _Timeout:
                 break  # discard interrupted depth, keep previous complete one
             if move is not None:
@@ -159,12 +225,62 @@ class Engine:
             # Stop early on a forced mate.
             if abs(best_score) > MATE - 1000:
                 break
-        if self._use_core:
-            cn, cq, ct = core_stats()
-            self.stats.nodes += cn
-            self.stats.qnodes += cq
-            self.stats.tt_hits += ct
+        self.stats.elapsed = time.time() - started
+        if best_move is not None:
+            self.stats.pv = [best_move.as_tuple()]
         return best_move, best_score
+
+    def _core_search(
+        self,
+        board: Board,
+        side: int,
+        game_ply: int,
+        history_hashes: list[int] | None,
+    ) -> tuple[Move | None, int]:
+        """Drive the compiled search, which owns the root as well.
+
+        The root used to live here and call into the core once per root move,
+        which meant no aspiration window, no principal variation, and a
+        hand-rolled "only search the top 10 root moves at depth >= 4" cut that
+        could discard the best move outright. All of that now happens in C.
+        """
+        opts = self.options
+        core_reset(
+            self.max_depth, opts.ext_budget,
+            1 if opts.use_tt else 0,
+            1 if opts.use_lmr else 0,
+            1 if opts.use_ext else 0,
+            1 if opts.use_nmp else 0,
+            1 if opts.use_pvs else 0,
+            1 if opts.use_futility else 0,
+            1 if opts.use_lmp else 0,
+            1 if opts.use_aspiration else 0,
+            1 if opts.use_repetition else 0,
+            opts.node_limit,
+        )
+        deadline = (time.time() + self.time_limit) if self.time_limit else 0.0
+        frm, to, cap, score, depth, pv = core_search(
+            board._pc, board._sd,
+            1 if side == HAN else 2,
+            self.max_depth, deadline, game_ply,
+            list(history_hashes or ()),
+            sorted(self._forbidden),
+        )
+        cn, cq, ct = core_stats()
+        self.stats.nodes = cn
+        self.stats.qnodes = cq
+        self.stats.tt_hits = ct
+        self.stats.depth_reached = depth
+        self.stats.pv = [
+            (f // COLS, f % COLS, t // COLS, t % COLS) for f, t in pv
+        ]
+        if frm < 0:
+            return None, score
+        return (
+            Move(frm // COLS, frm % COLS, to // COLS, to % COLS,
+                 _CODE_PIECE[cap] if cap else None),
+            score,
+        )
 
     # ------------------------------------------------------------- internals
     def _check_time(self) -> None:
@@ -175,22 +291,16 @@ class Engine:
         """Return a fast leaf score using the configured sign convention."""
         if self._evaluator is not None:
             return int(self._evaluator(board))
-        return evaluate(board, include_mobility=False)
+        return evaluate(board, include_mobility=False, ply=self._game_ply)
 
     def _root(
         self,
         board: Board,
         side: int,
         depth: int,
-        shortlist: list[Move] | None = None,
     ) -> tuple[int, Move | None, list[Move]]:
         alpha, beta = -MATE * 2, MATE * 2
-        if shortlist is not None:
-            # Deep pass: only search the top-K moves carried over from the
-            # previous (shallower) iteration, in that order.
-            moves = list(shortlist)
-        else:
-            moves = self._ordered_moves(board, side, depth)
+        moves = self._ordered_moves(board, side, depth)
         # Exclude moves that would cause a 3rd repetition (passed from caller).
         if self._forbidden:
             moves = [m for m in moves if m.as_tuple() not in self._forbidden]
@@ -312,191 +422,8 @@ class Engine:
 
         return None
 
-    def _root_landing_recapture_risk(self, board: Board, side: int, mv: Move) -> int:
-        """Penalty when a major piece lands on a square where it is immediately lost.
 
-        This catches non-capturing blunders such as moving a chariot onto a file
-        where an enemy cannon can immediately take it. The existing bad-capture
-        guard only works when mv.captured is set; this one also covers quiet
-        moves into poisoned squares.
-        """
-        moved = board.grid[mv.tr][mv.tc]
-        if moved is None or moved[1] != side:
-            return 0
 
-        moved_kind = moved[0]
-        moved_value = PIECE_VALUE.get(moved_kind, 0)
-
-        # Only police important pieces. Soldiers/guards can be traded normally.
-        if moved_kind not in ("C", "P", "M", "S"):
-            return 0
-
-        captured_value = PIECE_VALUE.get(mv.captured, 0) if mv.captured else 0
-
-        # If the move already captured a more valuable piece, existing
-        # winning-capture credit handles it; do not double-punish good exchanges.
-        if captured_value >= moved_value:
-            return 0
-
-        enemy = -side
-        worst = 0
-
-        for omv in board.generate_pseudo(enemy):
-            if omv.tr != mv.tr or omv.tc != mv.tc:
-                continue
-            if omv.captured != moved_kind:
-                continue
-
-            attacker = board.grid[omv.fr][omv.fc]
-            if attacker is None or attacker[1] != enemy:
-                continue
-
-            # Verify the enemy capture is legal enough: opponent must not leave
-            # their own general in check after making the capture.
-            board.make(omv)
-            try:
-                if board.in_check(enemy):
-                    continue
-            finally:
-                board.unmake()
-
-            attacker_value = PIECE_VALUE.get(attacker[0], 0)
-
-            # Net loss from landing there. Non-capturing chariot blunders get hit
-            # very hard; this is exactly the double-chariot loss pattern.
-            exchange_loss = moved_value - captured_value
-            penalty = exchange_loss + max(0, moved_value - attacker_value) // 2 + 300
-
-            if moved_kind == "C":
-                penalty += 400
-            elif moved_kind == "P":
-                penalty += 250
-
-            worst = max(worst, penalty)
-
-        return min(2200, worst)
-
-    def _root_home_intruder_risk(self, board: Board, side: int) -> int:
-        """Penalty for enemy chariot/cannon already active in our home zone.
-
-        _root_home_invasion_risk only catches new penetration. This catches the
-        worse follow-up pattern: an enemy line piece is already inside or near
-        our home area and keeps harvesting soldiers/guards/majors.
-        """
-        enemy = -side
-        risk = 0
-
-        def in_our_danger_zone(r: int) -> bool:
-            # Include the front home line too. Several losses came from enemy
-            # chariot/cannon sitting on the 6th/3rd rank and sweeping sideways.
-            if side == HAN:
-                return r <= 3
-            return r >= 6
-
-        for r in range(ROWS):
-            for c in range(COLS):
-                piece = board.grid[r][c]
-                if piece is None:
-                    continue
-                kind, pside = piece
-                if pside != enemy or kind not in ("C", "P"):
-                    continue
-                if not in_our_danger_zone(r):
-                    continue
-
-                # Existing enemy line piece in/near home is already dangerous.
-                if kind == "C":
-                    risk += 520
-                else:
-                    risk += 380
-
-                # Back rank and palace files are especially toxic.
-                if side == HAN:
-                    if r == 0:
-                        risk += 260
-                else:
-                    if r == 9:
-                        risk += 260
-
-                if 3 <= c <= 5:
-                    risk += 220
-
-                # Add urgency if this intruder has immediate captures.
-                for omv in board.generate_pseudo(enemy):
-                    if omv.fr != r or omv.fc != c:
-                        continue
-                    if omv.captured not in ("C", "P", "M", "S", "G", "J"):
-                        continue
-
-                    # Verify it is not an illegal self-checking capture.
-                    board.make(omv)
-                    try:
-                        if board.in_check(enemy):
-                            continue
-                    finally:
-                        board.unmake()
-
-                    captured_value = PIECE_VALUE.get(omv.captured, 0)
-                    if omv.captured in ("C", "P", "M"):
-                        risk += captured_value + 250
-                    elif omv.captured in ("S", "G"):
-                        risk += captured_value + 180
-                    else:
-                        risk += 120
-
-        return min(2600, risk)
-
-    def _root_home_invasion_risk(self, board: Board, side: int) -> int:
-        """Penalty for allowing immediate enemy chariot/cannon home-rank invasion.
-
-        This catches cases where the opponent does not immediately capture
-        material, but enters our back ranks with a line piece and threatens the
-        palace/guards next. It is root-only and uses pseudo moves, so it stays
-        much lighter than mate search.
-        """
-        enemy = -side
-        risk = 0
-
-        def in_our_home(r: int) -> bool:
-            if side == HAN:
-                return r <= 2
-            return r >= 7
-
-        for omv in board.generate_pseudo(enemy):
-            piece = board.grid[omv.fr][omv.fc]
-            if piece is None:
-                continue
-            kind, pside = piece
-            if pside != enemy or kind not in ("C", "P"):
-                continue
-
-            # Only care about new penetration into our home zone.
-            if in_our_home(omv.fr) or not in_our_home(omv.tr):
-                continue
-
-            # Chariot invasion is especially dangerous; cannon slightly less.
-            if kind == "C":
-                risk += 520
-            else:
-                risk += 360
-
-            # Extra penalty if it lands on back rank or near the palace files.
-            if side == HAN:
-                if omv.tr == 0:
-                    risk += 220
-            else:
-                if omv.tr == 9:
-                    risk += 220
-
-            if 3 <= omv.tc <= 5:
-                risk += 180
-
-            # If the invasion already captures something, material-risk will
-            # also catch it; still add a small tactical urgency bonus.
-            if omv.captured in ("G", "S", "M", "P", "C"):
-                risk += 180
-
-        return min(1400, risk)
 
     def _root_material_risk(self, board: Board, side: int) -> int:
         """Penalty for material the opponent can immediately win after a root move.

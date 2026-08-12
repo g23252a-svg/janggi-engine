@@ -566,7 +566,7 @@ cdef int _gen_pseudo(int* piece, int* side, int who, int* out):
     return n
 
 # --------------------------------------------------- make / unmake + zobrist
-DEF MAXHIST = 256
+DEF MAXHIST = 384
 cdef int h_fr[MAXHIST]
 cdef int h_fc[MAXHIST]
 cdef int h_tr[MAXHIST]
@@ -574,6 +574,9 @@ cdef int h_tc[MAXHIST]
 cdef int h_cap[MAXHIST]
 cdef int h_capsd[MAXHIST]
 cdef int h_top = 0
+
+cdef unsigned long long path_hash[MAXHIST + 1]
+cdef int path_irrev[MAXHIST + 1]
 
 cdef unsigned long long ZTAB[90 * 8 * 3]
 cdef unsigned long long Z_SIDE
@@ -624,6 +627,13 @@ cdef void _make(int* piece, int* side, int fr, int fc, int tr, int tc):
     cur_hash ^= _zp(ti, piece[ti], side[ti])
     piece[fi] = 0; side[fi] = 0
     cur_hash ^= Z_SIDE
+    # Repetition bookkeeping: record the resulting position, and remember that
+    # a capture makes everything before it unreachable.
+    path_hash[h_top] = cur_hash
+    if h_cap[h_top - 1] != 0:
+        path_irrev[h_top] = h_top
+    else:
+        path_irrev[h_top] = path_irrev[h_top - 1]
 
 cdef void _unmake(int* piece, int* side):
     global h_top, cur_hash
@@ -841,6 +851,8 @@ cdef int _see(int* piece, int* side, int fr, int fc, int tr, int tc):
     return gain[0]
 
 # -------------------------------------------------------------- search state
+from libc.math cimport log
+
 DEF TT_SIZE = 2097152          # 2^21 entries
 DEF TT_MASK = 2097151
 cdef unsigned long long tt_key[TT_SIZE]
@@ -849,43 +861,141 @@ cdef short tt_depth[TT_SIZE]
 cdef signed char tt_flag[TT_SIZE]   # 0 exact, 1 lower, 2 upper, -1 empty
 cdef int tt_best[TT_SIZE]           # from*90+to, -1 none
 
-DEF MAXPLY = 64
+DEF MAXPLY = 96
 cdef int MBUF[MAXPLY * 1024]        # per-ply move buffers (204 moves max)
-cdef long long MKEY[204]            # ordering keys (scratch, per node)
 
 cdef int killer1[MAXPLY]
 cdef int killer2[MAXPLY]
 cdef int histh[2 * 8100]
+cdef int counterm[2 * 8100]         # counter-move: [side][previous move] -> reply
+
+# Mate scores are MATE - ply, so anything past this bound is a forced mate.
+cdef int MATE_BOUND = MATE - 4096
+
+# Late-move reduction table, indexed [depth][move index].
+cdef int LMRTAB[64][64]
 
 cdef long long g_nodes = 0
 cdef long long g_qnodes = 0
 cdef long long g_tthits = 0
 cdef int g_timeout = 0
 cdef double g_deadline = 0.0
+cdef long long g_node_limit = 0
 cdef int g_ext = 0
 cdef int g_maxdepth = 6
 cdef int g_use_lmr = 1
 cdef int g_use_ext = 1
 cdef int g_use_tt = 1
+cdef int g_use_nmp = 1
+cdef int g_use_pvs = 1
+cdef int g_use_fut = 1
+cdef int g_use_lmp = 1
+cdef int g_use_asp = 1
+cdef int g_use_rep = 1
+
+# Repetition: hashes along the current search line plus the hashes of game
+# positions since the last capture, which Python supplies.
+DEF MAXGAME = 256
+cdef unsigned long long game_hash[MAXGAME]
+cdef int n_game_hash = 0
+
+# Root move list, kept between iterations so the previous depth's ranking
+# orders the next one.
+cdef int root_from[204]
+cdef int root_to[204]
+cdef int root_cap[204]
+cdef int root_score[204]
+cdef int n_root = 0
+
+
+cdef void _init_lmr():
+    cdef int d, m
+    cdef double red
+    for d in range(64):
+        for m in range(64):
+            if d < 3 or m < 2:
+                LMRTAB[d][m] = 0
+            else:
+                red = 0.55 + log(<double>d) * log(<double>m) / 2.5
+                LMRTAB[d][m] = <int>red
+
+_init_lmr()
+
 
 cdef int _time_up():
     global g_timeout
     if g_timeout:
         return 1
-    if g_deadline > 0.0 and (g_nodes + g_qnodes) % 4096 == 0:
+    if g_node_limit > 0 and (g_nodes + g_qnodes) >= g_node_limit:
+        g_timeout = 1
+        return 1
+    if g_deadline > 0.0 and (g_nodes + g_qnodes) % 2048 == 0:
         if _pytime.time() > g_deadline:
             g_timeout = 1
             return 1
     return 0
+
+
+cdef inline int _eval_for(int* piece, int* side, int who):
+    """Static score from `who`'s point of view."""
+    cdef int s = _evaluate(piece, side)
+    return -s if who == 2 else s
+
+
+cdef int _is_repetition():
+    """True if the current position already occurred in this line or the game.
+
+    Only positions with the same side to move can repeat, hence the stride of
+    two, and nothing before the last capture can repeat at all.
+    """
+    cdef int i = h_top - 2
+    cdef int base = path_irrev[h_top]
+    while i >= base:
+        if path_hash[i] == cur_hash:
+            return 1
+        i -= 2
+    if base == 0:
+        for i in range(n_game_hash):
+            if game_hash[i] == cur_hash:
+                return 1
+    return 0
+
+
+cdef void _make_null():
+    """Pass the move. Janggi permits passing, so this cannot be zugzwang-unsound
+    the way it can be in chess; the material guard below is belt and braces."""
+    global h_top, cur_hash
+    h_fr[h_top] = -1; h_fc[h_top] = -1
+    h_tr[h_top] = -1; h_tc[h_top] = -1
+    h_cap[h_top] = 0; h_capsd[h_top] = 0
+    h_top += 1
+    cur_hash ^= Z_SIDE
+    path_hash[h_top] = cur_hash
+    path_irrev[h_top] = h_top     # nothing before a pass can recur
+
+
+cdef void _unmake_null():
+    global h_top, cur_hash
+    h_top -= 1
+    cur_hash ^= Z_SIDE
+
+
+cdef int _has_null_material(int* piece, int* side, int who):
+    """At least one piece that can create a threat on its own."""
+    cdef int i, pc
+    for i in range(90):
+        pc = piece[i]
+        if side[i] == who and (pc == 1 or pc == 2 or pc == 3 or pc == 4):
+            return 1
+    return 0
+
 
 cdef int _qsearch(int* piece, int* side, int who, int alpha, int beta, int ply):
     global g_qnodes
     g_qnodes += 1
     if _time_up():
         return 0
-    cdef int stand = _evaluate(piece, side)
-    if who == 2:
-        stand = -stand
+    cdef int stand = _eval_for(piece, side, who)
     # Never index beyond the per-ply move buffer on pathological checking
     # cycles. At the cap the static score is the safest bounded fallback.
     if ply >= MAXPLY - 1:
@@ -901,7 +1011,7 @@ cdef int _qsearch(int* piece, int* side, int who, int alpha, int beta, int ply):
 
     cdef int* buf = &MBUF[ply * 1024]
     cdef int n = _gen_pseudo(piece, side, who, buf)
-    cdef int i, j, m, best, tmp
+    cdef int i, j, m, tmp
     # Outside check collect captures; in check collect every possible evasion.
     cdef int caps[204]
     cdef int ckey[204]
@@ -928,9 +1038,14 @@ cdef int _qsearch(int* piece, int* side, int who, int alpha, int beta, int ply):
     for i in range(nc):
         m = caps[i]
         fr = buf[m*5]; fc = buf[m*5+1]; tr = buf[m*5+2]; tc = buf[m*5+3]; cap = buf[m*5+4]
-        # SEE pruning is safe for optional captures, never for forced evasions.
-        if not in_chk and _see(piece, side, fr, fc, tr, tc) < 0:
-            continue
+        if not in_chk:
+            # Delta pruning: even winning this piece outright cannot lift the
+            # score to alpha, so the whole capture is irrelevant.
+            if cap != 6 and stand + PVAL[cap] + 200 < alpha:
+                continue
+            # SEE pruning is safe for optional captures, never for forced evasions.
+            if _see(piece, side, fr, fc, tr, tc) < 0:
+                continue
         _make(piece, side, fr, fc, tr, tc)
         # Pseudo-legal moves that leave our own general attacked are illegal.
         if _in_check(piece, side, who):
@@ -939,7 +1054,7 @@ cdef int _qsearch(int* piece, int* side, int who, int alpha, int beta, int ply):
         legal_found = 1
         if cap == 6:  # capturing the general ends it
             _unmake(piece, side)
-            return MATE
+            return MATE - ply
         score = -_qsearch(piece, side, 3 - who, -beta, -alpha, ply + 1)
         _unmake(piece, side)
         if g_timeout:
@@ -952,41 +1067,106 @@ cdef int _qsearch(int* piece, int* side, int who, int alpha, int beta, int ply):
         return -MATE + ply
     return alpha
 
-cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta, int ply):
+
+cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta,
+                  int ply, int is_pv, int can_null):
     global g_nodes, g_tthits, g_ext
     g_nodes += 1
     if _time_up():
         return 0
 
+    if ply > 0 and g_use_rep and _is_repetition():
+        return 0                    # repetition: neither side has made progress
+
+    # Mate-distance pruning: a mate found closer to the root already beats
+    # anything this subtree can produce.
+    if alpha < -MATE + ply:
+        alpha = -MATE + ply
+    if beta > MATE - ply - 1:
+        beta = MATE - ply - 1
+    if alpha >= beta:
+        return alpha
+
     cdef int alpha_orig = alpha
     cdef unsigned long long key = cur_hash
     cdef int slot = <int>(key & TT_MASK)
     cdef int tt_move = -1
+    cdef int tt_v, tt_f
     if g_use_tt and tt_flag[slot] >= 0 and tt_key[slot] == key:
         tt_move = tt_best[slot]
-        if tt_depth[slot] >= depth:
+        if tt_depth[slot] >= depth and not is_pv:
+            tt_v = tt_val[slot]
+            # Mate scores are stored relative to the storing node; rebase them
+            # onto this ply or the distance to mate comes out wrong.
+            if tt_v > MATE_BOUND:
+                tt_v -= ply
+            elif tt_v < -MATE_BOUND:
+                tt_v += ply
             g_tthits += 1
-            if tt_flag[slot] == 0:
-                return tt_val[slot]
-            if tt_flag[slot] == 1 and tt_val[slot] > alpha:
-                alpha = tt_val[slot]
-            elif tt_flag[slot] == 2 and tt_val[slot] < beta:
-                beta = tt_val[slot]
+            tt_f = tt_flag[slot]
+            if tt_f == 0:
+                return tt_v
+            if tt_f == 1 and tt_v > alpha:
+                alpha = tt_v
+            elif tt_f == 2 and tt_v < beta:
+                beta = tt_v
             if alpha >= beta:
-                return tt_val[slot]
+                return tt_v
 
-    if depth == 0:
+    if depth <= 0:
         return _qsearch(piece, side, who, alpha, beta, ply)
+    if ply >= MAXPLY - 2:
+        return _eval_for(piece, side, who)
+
+    cdef int in_chk = _in_check(piece, side, who)
+    cdef int static_eval = 0
+    cdef int R, score
+
+    if not in_chk:
+        static_eval = _eval_for(piece, side, who)
+
+        # Reverse futility: so far ahead that giving up a chunk per remaining
+        # ply still beats beta.
+        if (g_use_fut and not is_pv and depth <= 6 and beta < MATE_BOUND
+                and static_eval - 110 * depth >= beta):
+            return static_eval
+
+        # Null-move pruning: pass and see whether the opponent can still not
+        # reach beta. Janggi allows an actual pass, so this models a real option.
+        if (g_use_nmp and not is_pv and can_null and depth >= 3
+                and static_eval >= beta and beta < MATE_BOUND
+                and _has_null_material(piece, side, who)):
+            R = 3 + depth / 5
+            if R > depth - 1:
+                R = depth - 1
+            _make_null()
+            score = -_negamax(piece, side, 3 - who, depth - 1 - R,
+                              -beta, -beta + 1, ply + 1, 0, 0)
+            _unmake_null()
+            if g_timeout:
+                return 0
+            if score >= beta:
+                # A mate "proved" by letting the opponent move twice is not a
+                # mate; report the bound instead.
+                if score > MATE_BOUND:
+                    score = beta
+                return score
 
     cdef int* buf = &MBUF[ply * 1024]
     cdef int n = _gen_pseudo(piece, side, who, buf)
 
     # legal filter + ordering keys in one pass
     cdef int legal[204]
+    cdef long long mkey[204]
     cdef int nl = 0
     cdef int m, fr, fc, tr, tc, cap
     cdef long long k
-    cdef int mt, is_tt, killer, hh, see_v, mvv
+    cdef int mt, bucket, sub, see_v, prev_mt, cm
+    prev_mt = -1
+    if h_top > 0 and h_fr[h_top-1] >= 0:
+        prev_mt = (h_fr[h_top-1]*COLS + h_fc[h_top-1])*90 + (h_tr[h_top-1]*COLS + h_tc[h_top-1])
+    cm = counterm[(who-1)*8100 + prev_mt] if prev_mt >= 0 else -1
+
     for m in range(n):
         fr = buf[m*5]; fc = buf[m*5+1]; tr = buf[m*5+2]; tc = buf[m*5+3]; cap = buf[m*5+4]
         _make(piece, side, fr, fc, tr, tc)
@@ -995,41 +1175,48 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
             continue
         _unmake(piece, side)
         mt = (fr*COLS+fc)*90 + (tr*COLS+tc)
-        is_tt = 1 if (tt_move >= 0 and mt == tt_move) else 0
-        if cap != 0:
+        if tt_move >= 0 and mt == tt_move:
+            bucket = 7
+            sub = 0
+        elif cap != 0:
             see_v = _see(piece, side, fr, fc, tr, tc)
-            killer = 0
-            hh = 0
+            if see_v >= 0:
+                bucket = 6
+                sub = see_v * 16 + PVAL[cap] // 100
+            else:
+                bucket = 1          # losing capture: below every quiet move
+                sub = 30000 + see_v
+        elif mt == killer1[ply] or mt == killer2[ply]:
+            bucket = 5
+            sub = 0
+        elif mt == cm:
+            bucket = 4
+            sub = 0
         else:
-            see_v = 0
-            killer = 1 if (mt == killer1[depth & 63] or mt == killer2[depth & 63]) else 0
-            hh = histh[(who-1)*8100 + mt]
-        # composite ordering key (lexicographic like python tuple, desc)
-        mvv = (PVAL[cap] * 10 - PVAL[piece[fr*COLS+fc]]) if cap != 0 else (0 - PVAL[piece[fr*COLS+fc]])
-        k = ((<long long>is_tt) << 60) \
-            + ((<long long>(see_v + 30000)) << 42) \
-            + ((<long long>killer) << 40) \
-            + ((<long long>(hh if hh < 1048575 else 1048575)) << 18) \
-            + <long long>(mvv + 30000)
+            bucket = 2
+            sub = histh[(who-1)*8100 + mt]
+            if sub > 4194303:
+                sub = 4194303
+        k = ((<long long>bucket) << 40) + <long long>sub
         legal[nl] = m
-        MKEY[nl] = k
+        mkey[nl] = k
         nl += 1
 
     if nl == 0:
-        return -MATE + (g_maxdepth - depth)
+        # No legal move at all: in Janggi that loses on the spot.
+        return -MATE + ply
 
-    # insertion sort desc by MKEY
+    # insertion sort desc by mkey
     cdef int i, j, ti2
     cdef long long tk
     for i in range(1, nl):
-        ti2 = legal[i]; tk = MKEY[i]
+        ti2 = legal[i]; tk = mkey[i]
         j = i - 1
-        while j >= 0 and MKEY[j] < tk:
-            legal[j+1] = legal[j]; MKEY[j+1] = MKEY[j]
+        while j >= 0 and mkey[j] < tk:
+            legal[j+1] = legal[j]; mkey[j+1] = mkey[j]
             j -= 1
-        legal[j+1] = ti2; MKEY[j+1] = tk
+        legal[j+1] = ti2; mkey[j+1] = tk
 
-    cdef int in_chk = _in_check(piece, side, who)
     cdef int extend = 0
     if g_use_ext and g_ext > 0 and in_chk:
         extend = 1
@@ -1037,36 +1224,84 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
 
     cdef int best_score = -MATE * 2
     cdef int best_move = -1
-    cdef int score, reduce, gives_check
+    cdef int reduce, gives_check, new_depth, quiets, di, mi
+    cdef int fut_margin = 0
+    quiets = 0
+    if g_use_fut and not in_chk and not is_pv and depth <= 3:
+        fut_margin = static_eval + 120 * depth + 180
+
     for i in range(nl):
         m = legal[i]
         fr = buf[m*5]; fc = buf[m*5+1]; tr = buf[m*5+2]; tc = buf[m*5+3]; cap = buf[m*5+4]
+        mt = (fr*COLS+fc)*90 + (tr*COLS+tc)
+
+        if cap == 0 and best_move >= 0 and not in_chk and not is_pv:
+            # Late-move pruning: deep in a bad-looking quiet list, stop looking.
+            if (g_use_lmp and depth <= 4 and best_score > -MATE_BOUND
+                    and quiets >= 4 + depth * depth):
+                quiets += 1
+                continue
+            # Futility: this quiet move cannot plausibly reach alpha.
+            if (fut_margin != 0 and fut_margin <= alpha
+                    and best_score > -MATE_BOUND):
+                quiets += 1
+                continue
+        if cap == 0:
+            quiets += 1
+
         _make(piece, side, fr, fc, tr, tc)
+        gives_check = _in_check(piece, side, 3 - who)
+        new_depth = depth - 1 + extend
+
         reduce = 0
-        if (g_use_lmr and extend == 0 and depth >= 3 and i >= 3 and cap == 0):
-            gives_check = _in_check(piece, side, 3 - who)
-            if not gives_check:
-                reduce = 1
-        score = -_negamax(piece, side, 3 - who, depth - 1 + extend - reduce, -beta, -alpha, ply + 1)
-        if reduce and score > alpha and not g_timeout:
-            score = -_negamax(piece, side, 3 - who, depth - 1 + extend, -beta, -alpha, ply + 1)
+        if (g_use_lmr and extend == 0 and cap == 0 and not gives_check
+                and depth >= 3 and i >= 2):
+            di = depth if depth < 63 else 63
+            mi = i if i < 63 else 63
+            reduce = LMRTAB[di][mi]
+            if is_pv and reduce > 0:
+                reduce -= 1
+            if reduce > new_depth - 1:
+                reduce = new_depth - 1
+            if reduce < 0:
+                reduce = 0
+
+        if i == 0 or not g_use_pvs:
+            score = -_negamax(piece, side, 3 - who, new_depth - reduce,
+                              -beta, -alpha, ply + 1, is_pv, 1)
+            if reduce and score > alpha and not g_timeout:
+                score = -_negamax(piece, side, 3 - who, new_depth,
+                                  -beta, -alpha, ply + 1, is_pv, 1)
+        else:
+            # Principal variation search: everything after the first move only
+            # has to be shown to be worse, which a null window does far cheaper.
+            score = -_negamax(piece, side, 3 - who, new_depth - reduce,
+                              -alpha - 1, -alpha, ply + 1, 0, 1)
+            if score > alpha and reduce and not g_timeout:
+                score = -_negamax(piece, side, 3 - who, new_depth,
+                                  -alpha - 1, -alpha, ply + 1, 0, 1)
+            if score > alpha and score < beta and not g_timeout:
+                score = -_negamax(piece, side, 3 - who, new_depth,
+                                  -beta, -alpha, ply + 1, is_pv, 1)
         _unmake(piece, side)
+
         if g_timeout:
             if extend:
                 g_ext += 1
             return 0
         if score > best_score:
             best_score = score
-            best_move = (fr*COLS+fc)*90 + (tr*COLS+tc)
+            best_move = mt
         if best_score > alpha:
             alpha = best_score
         if alpha >= beta:
             if cap == 0:
-                mt = (fr*COLS+fc)*90 + (tr*COLS+tc)
-                if killer1[depth & 63] != mt:
-                    killer2[depth & 63] = killer1[depth & 63]
-                    killer1[depth & 63] = mt
+                if killer1[ply] != mt:
+                    killer2[ply] = killer1[ply]
+                    killer1[ply] = mt
                 histh[(who-1)*8100 + mt] += depth * depth
+                if prev_mt >= 0:
+                    counterm[(who-1)*8100 + prev_mt] = mt
             break
 
     if extend:
@@ -1078,18 +1313,78 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
     elif best_score >= beta:
         flag = 1
     if g_use_tt:
-        tt_key[slot] = key
-        tt_val[slot] = best_score
-        tt_depth[slot] = <short>depth
-        tt_flag[slot] = flag
-        tt_best[slot] = best_move
+        # Depth-preferred: never let a shallow node evict a deeper result for
+        # the same position.
+        if tt_flag[slot] < 0 or tt_key[slot] != key or depth >= tt_depth[slot]:
+            tt_v = best_score
+            if tt_v > MATE_BOUND:
+                tt_v += ply
+            elif tt_v < -MATE_BOUND:
+                tt_v -= ply
+            tt_key[slot] = key
+            tt_val[slot] = tt_v
+            tt_depth[slot] = <short>depth
+            tt_flag[slot] = flag
+            tt_best[slot] = best_move
     return best_score
 
+
+# ------------------------------------------------------------------- root
+cdef int _root_iteration(int* piece, int* side, int who, int depth,
+                         int alpha, int beta, int* best_idx):
+    """Search every root move at `depth`; fill root_score and return the best."""
+    cdef int i, fr, fc, tr, tc, score, best = -MATE * 2
+    cdef int a = alpha
+    best_idx[0] = -1
+    for i in range(n_root):
+        fr = root_from[i] // COLS; fc = root_from[i] % COLS
+        tr = root_to[i] // COLS;   tc = root_to[i] % COLS
+        _make(piece, side, fr, fc, tr, tc)
+        if i == 0 or not g_use_pvs:
+            score = -_negamax(piece, side, 3 - who, depth - 1, -beta, -a, 1, 1, 1)
+        else:
+            score = -_negamax(piece, side, 3 - who, depth - 1, -a - 1, -a, 1, 0, 1)
+            if score > a and score < beta and not g_timeout:
+                score = -_negamax(piece, side, 3 - who, depth - 1, -beta, -a, 1, 1, 1)
+        _unmake(piece, side)
+        if g_timeout:
+            # Keep whatever this iteration already proved; the caller decides
+            # whether a partial iteration may replace the previous best.
+            return best
+        root_score[i] = score
+        if score > best:
+            best = score
+            best_idx[0] = i
+        if score > a:
+            a = score
+        if a >= beta:
+            break
+    return best
+
+
+cdef void _sort_root():
+    """Best-scoring root move first, so the next iteration orders well."""
+    cdef int i, j, tf, tt_, tc_, ts
+    for i in range(1, n_root):
+        tf = root_from[i]; tt_ = root_to[i]; tc_ = root_cap[i]; ts = root_score[i]
+        j = i - 1
+        while j >= 0 and root_score[j] < ts:
+            root_from[j+1] = root_from[j]; root_to[j+1] = root_to[j]
+            root_cap[j+1] = root_cap[j]; root_score[j+1] = root_score[j]
+            j -= 1
+        root_from[j+1] = tf; root_to[j+1] = tt_
+        root_cap[j+1] = tc_; root_score[j+1] = ts
+
+
 # ------------------------------------------------------------------- API
-def core_reset(int max_depth, int ext_budget, int use_tt=1, int use_lmr=1, int use_ext=1):
+def core_reset(int max_depth, int ext_budget, int use_tt=1, int use_lmr=1,
+               int use_ext=1, int use_nmp=1, int use_pvs=1, int use_fut=1,
+               int use_lmp=1, int use_asp=1, int use_rep=1,
+               long long node_limit=0):
     """Reset TT / killers / history / stats for a fresh Engine.search()."""
     global g_nodes, g_qnodes, g_tthits, g_timeout, g_ext, g_maxdepth
-    global g_use_tt, g_use_lmr, g_use_ext
+    global g_use_tt, g_use_lmr, g_use_ext, g_use_nmp, g_use_pvs
+    global g_use_fut, g_use_lmp, g_use_asp, g_use_rep, g_node_limit, n_game_hash
     cdef int i
     for i in range(TT_SIZE):
         tt_flag[i] = -1
@@ -1098,28 +1393,205 @@ def core_reset(int max_depth, int ext_budget, int use_tt=1, int use_lmr=1, int u
         killer2[i] = -1
     for i in range(2 * 8100):
         histh[i] = 0
+        counterm[i] = -1
     g_nodes = 0; g_qnodes = 0; g_tthits = 0
     g_timeout = 0
     g_ext = ext_budget
     g_maxdepth = max_depth
     g_use_tt = use_tt; g_use_lmr = use_lmr; g_use_ext = use_ext
+    g_use_nmp = use_nmp; g_use_pvs = use_pvs; g_use_fut = use_fut
+    g_use_lmp = use_lmp; g_use_asp = use_asp; g_use_rep = use_rep
+    g_node_limit = node_limit
+    n_game_hash = 0
+
+
+def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
+                double deadline, int base_ply, object history_hashes=None,
+                object forbidden=None):
+    """Full iterative-deepening search, root included.
+
+    Returns (from_sq, to_sq, cap, score, depth_reached, pv) where pv is a list
+    of (from_sq, to_sq) pairs walked out of the transposition table.
+
+    Keeping the root in here (rather than driving it one move at a time from
+    Python) is what makes aspiration windows, root move ordering carry-over
+    and a real principal variation possible.
+    """
+    global g_deadline, h_top, g_base_ply, n_root, n_game_hash, g_timeout, g_ext
+    g_deadline = deadline
+    g_base_ply = base_ply
+    g_timeout = 0
+    h_top = 0
+    _full_hash(&piece[0], &side[0], who)
+    path_hash[0] = cur_hash
+    path_irrev[0] = 0
+
+    n_game_hash = 0
+    if history_hashes is not None:
+        for h in history_hashes:
+            if n_game_hash >= MAXGAME:
+                break
+            game_hash[n_game_hash] = <unsigned long long>h
+            n_game_hash += 1
+
+    cdef int ban[204]
+    cdef int n_ban = 0
+    cdef int bfr, bfc, btr, btc
+    if forbidden is not None:
+        for entry in forbidden:
+            if n_ban >= 204:
+                break
+            bfr = entry[0]; bfc = entry[1]; btr = entry[2]; btc = entry[3]
+            ban[n_ban] = (bfr * COLS + bfc) * 90 + (btr * COLS + btc)
+            n_ban += 1
+
+    # --- build the legal root move list ---------------------------------
+    cdef int rbuf[1024]
+    cdef int n = _gen_pseudo(&piece[0], &side[0], who, rbuf)
+    cdef int m, fr, fc, tr, tc, cap, mt, i, banned
+    n_root = 0
+    for m in range(n):
+        fr = rbuf[m*5]; fc = rbuf[m*5+1]; tr = rbuf[m*5+2]; tc = rbuf[m*5+3]; cap = rbuf[m*5+4]
+        _make(&piece[0], &side[0], fr, fc, tr, tc)
+        if _in_check(&piece[0], &side[0], who):
+            _unmake(&piece[0], &side[0])
+            continue
+        _unmake(&piece[0], &side[0])
+        mt = (fr*COLS+fc)*90 + (tr*COLS+tc)
+        banned = 0
+        for i in range(n_ban):
+            if ban[i] == mt:
+                banned = 1
+                break
+        if banned:
+            continue
+        root_from[n_root] = fr*COLS+fc
+        root_to[n_root] = tr*COLS+tc
+        root_cap[n_root] = cap
+        root_score[n_root] = 0
+        n_root += 1
+        if n_root >= 204:
+            break
+
+    if n_root == 0:
+        return (-1, -1, 0, -MATE, 0, [])
+
+    # Order the first iteration by capture value so depth 1 already starts well.
+    for i in range(n_root):
+        root_score[i] = PVAL[root_cap[i]] * 10
+    _sort_root()
+
+    cdef int depth, best_idx, score, alpha, beta, window
+    cdef int final_from = root_from[0], final_to = root_to[0]
+    cdef int final_cap = root_cap[0], final_score = 0, depth_done = 0
+    cdef int ext_budget = g_ext
+
+    for depth in range(1, max_depth + 1):
+        g_ext = ext_budget
+        if g_use_asp and depth >= 4 and depth_done > 0 and final_score < MATE_BOUND \
+                and final_score > -MATE_BOUND:
+            window = 40
+        else:
+            window = 0
+
+        while True:
+            if window > 0:
+                alpha = final_score - window
+                beta = final_score + window
+            else:
+                alpha = -MATE * 2
+                beta = MATE * 2
+            score = _root_iteration(&piece[0], &side[0], who, depth,
+                                    alpha, beta, &best_idx)
+            if g_timeout:
+                break
+            if window > 0 and (score <= alpha or score >= beta):
+                # Aspiration failed: widen and redo this depth.
+                window *= 4
+                if window > 1200:
+                    window = 0
+                continue
+            break
+
+        if g_timeout:
+            # Accept a partially searched deeper iteration only when it found
+            # something strictly better than the last completed depth.
+            if best_idx >= 0 and score > final_score and depth_done > 0:
+                final_from = root_from[best_idx]
+                final_to = root_to[best_idx]
+                final_cap = root_cap[best_idx]
+                final_score = score
+            break
+
+        if best_idx >= 0:
+            final_from = root_from[best_idx]
+            final_to = root_to[best_idx]
+            final_cap = root_cap[best_idx]
+            final_score = score
+        depth_done = depth
+        _sort_root()
+        if final_score > MATE_BOUND or final_score < -MATE_BOUND:
+            break     # forced result found; deeper search cannot improve on it
+
+    # --- principal variation, walked out of the transposition table ------
+    pv = []
+    cdef int pv_from = final_from, pv_to = final_to
+    cdef int made = 0, slot, bm, ok
+    cdef int pn, pm
+    cdef int pbuf[1024]
+    cdef int cur_who = who
+    while made < 24:
+        pv.append((pv_from, pv_to))
+        _make(&piece[0], &side[0], pv_from // COLS, pv_from % COLS,
+              pv_to // COLS, pv_to % COLS)
+        made += 1
+        cur_who = 3 - cur_who
+        slot = <int>(cur_hash & TT_MASK)
+        if tt_flag[slot] < 0 or tt_key[slot] != cur_hash:
+            break
+        bm = tt_best[slot]
+        if bm < 0:
+            break
+        pv_from = bm // 90
+        pv_to = bm % 90
+        # Validate against real legal moves: a table collision must never put
+        # an impossible move in front of the user.
+        pn = _gen_pseudo(&piece[0], &side[0], cur_who, pbuf)
+        ok = 0
+        for pm in range(pn):
+            if (pbuf[pm*5]*COLS + pbuf[pm*5+1]) == pv_from and \
+               (pbuf[pm*5+2]*COLS + pbuf[pm*5+3]) == pv_to:
+                ok = 1
+                break
+        if not ok:
+            break
+    for i in range(made):
+        _unmake(&piece[0], &side[0])
+
+    return (final_from, final_to, final_cap, final_score, depth_done, pv)
+
 
 def core_negamax(int[::1] piece, int[::1] side, int who, int depth,
                  int alpha, int beta, double deadline, int base_ply):
-    """Search the subtree; returns score from `who`'s perspective.
+    """Search one subtree; returns the score from `who`'s perspective.
     Raises TimeoutError if the deadline passes (partial result discarded)."""
-    global g_deadline, h_top, g_base_ply
+    global g_deadline, h_top, g_base_ply, n_game_hash
     g_deadline = deadline
     g_base_ply = base_ply
     h_top = 0
+    n_game_hash = 0
     _full_hash(&piece[0], &side[0], who)
-    cdef int score = _negamax(&piece[0], &side[0], who, depth, alpha, beta, 0)
+    path_hash[0] = cur_hash
+    path_irrev[0] = 0
+    cdef int score = _negamax(&piece[0], &side[0], who, depth, alpha, beta, 0, 1, 1)
     if g_timeout:
         raise TimeoutError()
     return score
 
+
 def core_stats():
     return (g_nodes, g_qnodes, g_tthits)
+
 
 def core_perft(int[::1] piece, int[::1] side, int who, int depth):
     """Legal-move perft on the int arrays (verification)."""
@@ -1127,6 +1599,7 @@ def core_perft(int[::1] piece, int[::1] side, int who, int depth):
     h_top = 0
     cdef long long total = _perft(&piece[0], &side[0], who, depth, 0)
     return total
+
 
 cdef long long _perft(int* piece, int* side, int who, int depth, int ply):
     if depth == 0:
@@ -1142,10 +1615,12 @@ cdef long long _perft(int* piece, int* side, int who, int depth, int ply):
         _unmake(piece, side)
     return total
 
+
 def core_see(int[::1] piece, int[::1] side, int fr, int fc, int tr, int tc):
     global h_top
     h_top = 0
     return _see(&piece[0], &side[0], fr, fc, tr, tc)
+
 
 def core_eval(int[::1] piece, int[::1] side, int base_ply):
     """evaluate(board, include_mobility=False)."""

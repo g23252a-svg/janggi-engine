@@ -134,18 +134,27 @@ except Exception:
     _HAVE_CEVAL = False
 
 
-def evaluate(board: Board, include_mobility: bool = True) -> int:
+def evaluate(board: Board, include_mobility: bool = True, ply: int | None = None) -> int:
     """Static evaluation. Uses the Cython evaluator when the int arrays are
-    live (identical results, verified); falls back to pure Python otherwise."""
-    if _HAVE_CEVAL:
+    live (identical results, verified); falls back to pure Python otherwise.
+
+    ``ply`` is the number of moves played in the GAME, used only by the
+    endgame score-lock. It must stay fixed for the duration of one search:
+    if it drifted with search depth the same position would evaluate
+    differently at different depths, which silently corrupts the
+    transposition table. Defaults to the board's own history length, which is
+    correct for a standalone call on a real game position.
+    """
+    if ply is None:
         ply = len(board._history)
+    if _HAVE_CEVAL:
         if include_mobility:
             return _c_evaluate_mob(board._pc, board._sd, ply)
         return _c_evaluate(board._pc, board._sd, ply)
-    return _py_evaluate(board, include_mobility)
+    return _py_evaluate(board, include_mobility, ply)
 
 
-def _py_evaluate(board: Board, include_mobility: bool = True) -> int:
+def _py_evaluate(board: Board, include_mobility: bool = True, ply: int | None = None) -> int:
     score = 0
     material_score = 0
     g = board._g
@@ -171,11 +180,12 @@ def _py_evaluate(board: Board, include_mobility: bool = True) -> int:
 
             score += v if side == HAN else -v
 
-    # Score-lock mode for long games. Board._history length is the played ply
-    # count in real games and also works inside search because make/unmake keeps
-    # it consistent. After 120 ply, preserving official material score matters
-    # more than activity or shape.
-    ply = len(getattr(board, "_history", ()))
+    # Score-lock mode for long games. Janggi decides a game that reaches the
+    # move limit on official material points, so late on, preserving material
+    # matters more than activity or shape. `ply` counts moves played in the
+    # game and is deliberately NOT the search depth -- see evaluate().
+    if ply is None:
+        ply = len(board._history)
     if ply >= 120:
         score += material_score * W_ENDGAME_SCORE_LOCK
     elif ply >= 80:
