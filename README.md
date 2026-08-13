@@ -30,10 +30,15 @@ against live human opponents on online services.
 - **Check extensions** on a per-branch budget.
 - **Repetition detection inside the search**, so a repeated position scores as
   the draw it is rather than being re-evaluated as something new.
-- **Janggi-specific evaluation** — material, soldier advancement, central
-  control, line-piece mobility, general safety and guard cover, cannon screens,
-  loose-piece risk, and an endgame lock onto official material points.
-- **Opening book** built from recorded games (기보).
+- **Janggi-specific evaluation** — material weighted by game phase (a cannon
+  needs a screen, so it is worth less as the board empties), chariot activity on
+  open files and the enemy soldier rank, 면포, horses and elephants scored by
+  how many legs are actually free, soldier structure, loose-piece risk, king
+  danger that grows with the square of the attacking force, and an endgame lock
+  onto official material points.
+- **Opening book** built from recorded games (기보) — present but **off by
+  default**, because the one in the repository was measured to cost about 138
+  centipawns a move against simply searching. See the note in `server.py`.
 
 ## Rules implemented
 
@@ -127,9 +132,16 @@ What that measurement currently says, at an equal 60k nodes per move:
 
 | technique | score with it on | verdict |
 | --- | ---: | --- |
+| the Janggi-aware evaluator (`eval=1` turns it off) | 75.0% of 80 | clearly better, +191 elo |
 | futility + late-move pruning | 65.0% of 40 | clearly better |
 | late move reductions | 60.0% of 40 | better, not significant at this sample |
-| null-move pruning | 48.3% of 60 | no measurable effect — untuned, retest it |
+| null-move pruning | 57.5% of 40 | positive, still not significant — untuned |
+
+A position and its mirror image must score exactly opposite. That test is in
+`tests/test_parity.py`, and it earned its place immediately: the cannon-screen
+check was returning a verdict from whichever of the four rays happened to be
+tried first, so the engine disagreed with its own mirror image in 597 of 871
+random positions.
 
 ## Play it in the browser (GitHub Pages)
 
@@ -242,9 +254,9 @@ Opening position, fixed depth, on a 2026 cloud vCPU:
 
 | depth | nodes | time |
 | ---: | ---: | ---: |
-| 8 | 193k | 0.9s |
-| 10 | 584k | 2.5s |
-| 12 | 2.7M | 12.0s |
+| 8 | 157k | 0.5s |
+| 10 | 433k | 1.3s |
+| 12 | 2.5M | 8.0s |
 
 For comparison, the same depth-8 search cost 1.58M nodes and 8.0s before the
 search rewrite and the attack-map evaluator — the same wall clock now reaches
