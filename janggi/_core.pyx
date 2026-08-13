@@ -206,6 +206,11 @@ cdef int _attacked(int* piece, int* side, int r, int c, int by_side):
                         return 1
     return 0
 
+# Attack weights for king danger, indexed by piece code.
+cdef int KDANGER[8]
+KDANGER[0]=0; KDANGER[1]=40; KDANGER[2]=30; KDANGER[3]=20
+KDANGER[4]=10; KDANGER[5]=10; KDANGER[6]=0; KDANGER[7]=5
+
 # ------------------------------------------------------------- attack maps
 # _attacked() answers one square at a time by scanning outward from it. The
 # evaluator asks ~70 such questions per call (every piece for the loose-piece
@@ -220,6 +225,9 @@ cdef int _attacked(int* piece, int* side, int r, int c, int by_side):
 #
 # amap layout: amap[(s - 1) * 90 + sq], s = 1 HAN / 2 CHO.
 cdef void _attack_maps(int* piece, int* side, int* amap):
+    _attack_maps_w(piece, side, amap, NULL)
+
+cdef void _attack_maps_w(int* piece, int* side, int* amap, int* awt):
     cdef int i, r, c, idx, pc, s, d, dr, dc, nr, nc, t, base, fwd, jumped
     cdef int sr, sc, b1r, b1c, b2r, b2c
     cdef int ORTH[4][2]
@@ -249,6 +257,9 @@ cdef void _attack_maps(int* piece, int* side, int* amap):
 
     for i in range(180):
         amap[i] = 0
+    if awt != NULL:
+        for i in range(180):
+            awt[i] = 0
 
     for r in range(ROWS):
         for c in range(COLS):
@@ -265,6 +276,8 @@ cdef void _attack_maps(int* piece, int* side, int* amap):
                     nr = r+dr; nc = c+dc
                     while 0 <= nr < ROWS and 0 <= nc < COLS:
                         amap[base + nr*COLS+nc] = 1
+                        if awt != NULL:
+                            awt[base + nr*COLS+nc] += KDANGER[pc]
                         if piece[nr*COLS+nc] != 0:
                             break
                         nr += dr; nc += dc
@@ -275,6 +288,8 @@ cdef void _attack_maps(int* piece, int* side, int* amap):
                         while (0 <= nr < ROWS and 0 <= nc < COLS and _is_pdiag(nr,nc)
                                and _same_half(r,nr)):
                             amap[base + nr*COLS+nc] = 1
+                            if awt != NULL:
+                                awt[base + nr*COLS+nc] += KDANGER[pc]
                             if piece[nr*COLS+nc] != 0:
                                 break
                             nr += dr; nc += dc
@@ -295,6 +310,8 @@ cdef void _attack_maps(int* piece, int* side, int* amap):
                             if t == 2:
                                 break        # never bears on a cannon
                             amap[base + nr*COLS+nc] = 1
+                            if awt != NULL:
+                                awt[base + nr*COLS+nc] += KDANGER[pc]
                             if t != 0:
                                 break
                         nr += dr; nc += dc
@@ -315,6 +332,8 @@ cdef void _attack_maps(int* piece, int* side, int* amap):
                                 if t == 2:
                                     break
                                 amap[base + nr*COLS+nc] = 1
+                                if awt != NULL:
+                                    awt[base + nr*COLS+nc] += KDANGER[pc]
                                 if t != 0:
                                     break
                             nr += dr; nc += dc
@@ -326,6 +345,8 @@ cdef void _attack_maps(int* piece, int* side, int* amap):
                         nr = r + HL[i][2]; nc = c + HL[i][3]
                         if 0 <= nr < ROWS and 0 <= nc < COLS:
                             amap[base + nr*COLS+nc] = 1
+                            if awt != NULL:
+                                awt[base + nr*COLS+nc] += KDANGER[pc]
 
             elif pc == 4:  # elephant
                 for i in range(8):
@@ -337,22 +358,32 @@ cdef void _attack_maps(int* piece, int* side, int* amap):
                         nr = r + EL[i][4]; nc = c + EL[i][5]
                         if 0 <= nr < ROWS and 0 <= nc < COLS:
                             amap[base + nr*COLS+nc] = 1
+                            if awt != NULL:
+                                awt[base + nr*COLS+nc] += KDANGER[pc]
 
             elif pc == 5:  # soldier
                 fwd = 1 if s == 1 else -1
                 nr = r + fwd
                 if 0 <= nr < ROWS:
                     amap[base + nr*COLS+c] = 1
+                    if awt != NULL:
+                        awt[base + nr*COLS+c] += KDANGER[pc]
                 if c - 1 >= 0:
                     amap[base + r*COLS+c-1] = 1
+                    if awt != NULL:
+                        awt[base + r*COLS+c-1] += KDANGER[pc]
                 if c + 1 < COLS:
                     amap[base + r*COLS+c+1] = 1
+                    if awt != NULL:
+                        awt[base + r*COLS+c+1] += KDANGER[pc]
                 if _is_pdiag(r, c):
                     nr = r + fwd
                     for i in range(2):
                         nc = c - 1 if i == 0 else c + 1
                         if 0 <= nr < ROWS and 0 <= nc < COLS and _is_pdiag(nr, nc):
                             amap[base + nr*COLS+nc] = 1
+                            if awt != NULL:
+                                awt[base + nr*COLS+nc] += KDANGER[pc]
 
             elif pc == 6 or pc == 7:  # general / guard, palace only
                 if _in_palace(r, c, s):
@@ -360,11 +391,15 @@ cdef void _attack_maps(int* piece, int* side, int* amap):
                         nr = r + ORTH[d][0]; nc = c + ORTH[d][1]
                         if _in_palace(nr, nc, s):
                             amap[base + nr*COLS+nc] = 1
+                            if awt != NULL:
+                                awt[base + nr*COLS+nc] += KDANGER[pc]
                     if _is_pdiag(r, c):
                         for d in range(4):
                             nr = r + DIAG[d][0]; nc = c + DIAG[d][1]
                             if _in_palace(nr, nc, s) and _is_pdiag(nr, nc):
                                 amap[base + nr*COLS+nc] = 1
+                                if awt != NULL:
+                                    awt[base + nr*COLS+nc] += KDANGER[pc]
 
 
 def core_attack_map(int[::1] piece, int[::1] side):
@@ -394,6 +429,8 @@ cdef int _in_check(int* piece, int* side, int who):
 # ------------------------------------------------------------- move gen
 # moves packed as 5 ints each: fr, fc, tr, tc, cap_code
 cdef int _gen_pseudo(int* piece, int* side, int who, int* out):
+    global g_gencalls
+    g_gencalls += 1
     cdef int n = 0
     cdef int r, c, idx, pc, nr, nc, t, d, i, jumped, fwd
     cdef int sr, sc, b1r, b1c, b2r, b2c, dr, dc
@@ -655,6 +692,13 @@ cdef void _unmake(int* piece, int* side):
 
 # ----------------------------------------------------------------- evaluate
 cdef int _cannon_screen(int* piece, int r, int c):
+    """Is there a piece this cannon could actually jump over? Any ray will do.
+
+    This used to return on the first ray that contained anything, so a good
+    screen to one side went unseen whenever the nearest piece on an earlier ray
+    was another cannon -- and which ray came first decided the answer, which is
+    why the evaluation was not symmetric between the two sides.
+    """
     cdef int d, dr, dc, nr, nc, t
     cdef int ORTH[4][2]
     ORTH[0][0]=1; ORTH[0][1]=0; ORTH[1][0]=-1; ORTH[1][1]=0
@@ -665,7 +709,9 @@ cdef int _cannon_screen(int* piece, int r, int c):
         while 0 <= nr < ROWS and 0 <= nc < COLS:
             t = piece[nr*COLS+nc]
             if t != 0:
-                return 1 if t != 2 else 0
+                if t != 2:
+                    return 1
+                break          # a cannon cannot be a screen; try another ray
             nr += dr; nc += dc
     return 0
 
@@ -810,6 +856,8 @@ cdef int SEE_BUF[1200]
 
 cdef int _see(int* piece, int* side, int fr, int fc, int tr, int tc):
     """Mirrors see.py. Move must be a capture (piece on target)."""
+    global g_seecalls
+    g_seecalls += 1
     cdef int ti = tr*COLS+tc
     cdef int fi = fr*COLS+fc
     if piece[ti] == 0 or piece[fi] == 0:
@@ -853,6 +901,225 @@ cdef int _see(int* piece, int* side, int fr, int fc, int tr, int tc):
         gain[i-1] = -v
     return gain[0]
 
+# ============================================================ evaluation v2
+# The v1 evaluator knows material, soldier advancement, "middle files are
+# nice", loose pieces and a crude king-danger count. That is most of a chess
+# engine's first evaluation and almost none of Janggi's actual content. v2 adds
+# the things a Janggi player actually looks at:
+#
+#   * a game phase, so a cannon (which needs screens) is worth less as the
+#     board empties and a soldier is worth more
+#   * chariot activity: open files, the enemy soldier rank, pressure on the palace
+#   * 면포 -- a cannon covering the palace face, the standard defensive setup
+#   * horses and elephants scored by how many of their legs are actually free,
+#     because a fully blocked horse is nearly a spectator
+#   * soldier structure: connected soldiers, soldiers that have reached the palace
+#   * king danger that grows with the square of the attacking force rather than
+#     linearly, so three attackers matter far more than three times one
+#
+# Selectable at runtime (SearchOptions.eval_version) so it can be played against
+# v1 directly rather than assumed to be better.
+
+cdef int PHASE_TOTAL = 14400      # both sides' non-general material at the start
+
+cdef inline int _horse_free_legs(int* piece, int r, int c):
+    cdef int i, sr, sc, nr, nc, free = 0
+    cdef int HL[8][4]
+    HL[0][0]=-1; HL[0][1]=0;  HL[0][2]=-2; HL[0][3]=-1
+    HL[1][0]=-1; HL[1][1]=0;  HL[1][2]=-2; HL[1][3]=1
+    HL[2][0]=1;  HL[2][1]=0;  HL[2][2]=2;  HL[2][3]=-1
+    HL[3][0]=1;  HL[3][1]=0;  HL[3][2]=2;  HL[3][3]=1
+    HL[4][0]=0;  HL[4][1]=-1; HL[4][2]=-1; HL[4][3]=-2
+    HL[5][0]=0;  HL[5][1]=-1; HL[5][2]=1;  HL[5][3]=-2
+    HL[6][0]=0;  HL[6][1]=1;  HL[6][2]=-1; HL[6][3]=2
+    HL[7][0]=0;  HL[7][1]=1;  HL[7][2]=1;  HL[7][3]=2
+    for i in range(8):
+        sr = r + HL[i][0]; sc = c + HL[i][1]
+        nr = r + HL[i][2]; nc = c + HL[i][3]
+        if (0 <= sr < ROWS and 0 <= sc < COLS and piece[sr*COLS+sc] == 0
+                and 0 <= nr < ROWS and 0 <= nc < COLS):
+            free += 1
+    return free
+
+cdef inline int _eleph_free_legs(int* piece, int r, int c):
+    cdef int i, b1r, b1c, b2r, b2c, nr, nc, free = 0
+    cdef int EL[8][6]
+    EL[0][0]=-1; EL[0][1]=0;  EL[0][2]=-2; EL[0][3]=-1; EL[0][4]=-3; EL[0][5]=-2
+    EL[1][0]=-1; EL[1][1]=0;  EL[1][2]=-2; EL[1][3]=1;  EL[1][4]=-3; EL[1][5]=2
+    EL[2][0]=1;  EL[2][1]=0;  EL[2][2]=2;  EL[2][3]=-1; EL[2][4]=3;  EL[2][5]=-2
+    EL[3][0]=1;  EL[3][1]=0;  EL[3][2]=2;  EL[3][3]=1;  EL[3][4]=3;  EL[3][5]=2
+    EL[4][0]=0;  EL[4][1]=-1; EL[4][2]=-1; EL[4][3]=-2; EL[4][4]=-2; EL[4][5]=-3
+    EL[5][0]=0;  EL[5][1]=-1; EL[5][2]=1;  EL[5][3]=-2; EL[5][4]=2;  EL[5][5]=-3
+    EL[6][0]=0;  EL[6][1]=1;  EL[6][2]=-1; EL[6][3]=2;  EL[6][4]=-2; EL[6][5]=3
+    EL[7][0]=0;  EL[7][1]=1;  EL[7][2]=1;  EL[7][3]=2;  EL[7][4]=2;  EL[7][5]=3
+    for i in range(8):
+        b1r = r + EL[i][0]; b1c = c + EL[i][1]
+        b2r = r + EL[i][2]; b2c = c + EL[i][3]
+        nr  = r + EL[i][4]; nc  = c + EL[i][5]
+        if (0 <= b1r < ROWS and 0 <= b1c < COLS and piece[b1r*COLS+b1c] == 0
+                and 0 <= b2r < ROWS and 0 <= b2c < COLS and piece[b2r*COLS+b2c] == 0
+                and 0 <= nr < ROWS and 0 <= nc < COLS):
+            free += 1
+    return free
+
+
+cdef int _evaluate2(int* piece, int* side):
+    """HAN-positive static score. See the block comment above."""
+    cdef int score = 0, material = 0, phase_mat = 0
+    cdef int r, c, idx, pc, s, base, v, adv, i, d, nr, nc
+    cdef int ghr = -1, ghc = -1, gcr = -1, gcc = -1
+    cdef int amap[180]
+    cdef int awt[180]
+    cdef int sol_file[2][9]        # soldiers per side per file
+    cdef int occ_file[9]           # any piece on the file (for open-file chariots)
+    cdef int phase, freelegs, danger_h = 0, danger_c = 0
+    cdef int ORTH[4][2]
+    ORTH[0][0]=1; ORTH[0][1]=0; ORTH[1][0]=-1; ORTH[1][1]=0
+    ORTH[2][0]=0; ORTH[2][1]=1; ORTH[3][0]=0; ORTH[3][1]=-1
+
+    for c in range(9):
+        sol_file[0][c] = 0; sol_file[1][c] = 0; occ_file[c] = 0
+
+    for idx in range(90):
+        pc = piece[idx]
+        if pc == 0:
+            continue
+        s = side[idx]
+        occ_file[idx % COLS] += 1
+        if pc != 6:
+            phase_mat += PVAL[pc]
+        if pc == 5:
+            sol_file[s-1][idx % COLS] += 1
+        if pc == 6:
+            if s == 1:
+                ghr = idx // COLS; ghc = idx % COLS
+            else:
+                gcr = idx // COLS; gcc = idx % COLS
+
+    phase = (phase_mat * 256) // PHASE_TOTAL
+    if phase > 256:
+        phase = 256
+    if phase < 0:
+        phase = 0
+
+    _attack_maps_w(piece, side, amap, awt)
+
+    for r in range(ROWS):
+        for c in range(COLS):
+            idx = r*COLS + c
+            pc = piece[idx]
+            if pc == 0:
+                continue
+            s = side[idx]
+            base = PVAL[pc]
+
+            # --- phase-adjusted material -------------------------------
+            # A cannon needs a screen, so it loses value as the board empties;
+            # soldiers gain value; elephants lose a little.
+            if pc == 2:
+                base -= (150 * (256 - phase)) // 256
+            elif pc == 5:
+                base += (60 * (256 - phase)) // 256
+            elif pc == 4:
+                base -= (40 * (256 - phase)) // 256
+            material += base if s == 1 else -base
+            v = base
+
+            if pc == 5:      # soldier
+                adv = r if s == 1 else (ROWS - 1 - r)
+                v += adv * 8
+                if 3 <= c <= 5:
+                    v += 10
+                # connected soldiers defend each other
+                if c > 0 and piece[idx-1] == 5 and side[idx-1] == s:
+                    v += 8
+                # a soldier that has reached the enemy palace is a real threat
+                if _in_palace(r, c, 3 - s):
+                    v += 30
+            elif pc == 1:    # chariot
+                v += (4 - (c-4 if c >= 4 else 4-c)) * 3
+                if occ_file[c] == 1:          # only the chariot on this file
+                    v += 25
+                elif sol_file[s-1][c] == 0:   # no own soldier blocking it
+                    v += 12
+                # sitting on the rank the enemy soldiers start on
+                if (s == 1 and r == 6) or (s == 2 and r == 3):
+                    v += 20
+            elif pc == 2:    # cannon
+                v += (4 - (c-4 if c >= 4 else 4-c)) * 3
+                if _cannon_screen(piece, r, c):
+                    v += 15
+                # 면포: a cannon inside its own palace covering the general
+                if _in_palace(r, c, s):
+                    v += 40
+            elif pc == 3:    # horse
+                v += (4 - (c-4 if c >= 4 else 4-c)) * 3
+                freelegs = _horse_free_legs(piece, r, c)
+                v += freelegs * 7 - 28        # 4 free legs is par
+            elif pc == 4:    # elephant
+                freelegs = _eleph_free_legs(piece, r, c)
+                v += freelegs * 5 - 20
+            elif pc == 7:    # guard: stay home with the general
+                if _in_palace(r, c, s):
+                    v += 12
+
+            score += v if s == 1 else -v
+
+
+    # --- king danger ------------------------------------------------------
+    # Sum the attacking weight bearing on each palace square, then square it:
+    # three pieces converging on a palace is far worse than three times one
+    # piece looking at it, and a linear term never expresses that.
+    for r in range(ROWS):
+        for c in range(COLS):
+            idx = r*COLS + c
+            if _in_palace(r, c, 1):
+                danger_h += awt[90 + idx]
+            elif _in_palace(r, c, 2):
+                danger_c += awt[idx]
+    score -= (danger_h * danger_h) // 900
+    score += (danger_c * danger_c) // 900
+
+    # --- general exposure (v1 term, kept) --------------------------------
+    if ghr >= 0:
+        v = 0
+        for d in range(4):
+            nr = ghr + ORTH[d][0]; nc = ghc + ORTH[d][1]
+            if _in_palace(nr, nc, 1) and piece[nr*COLS+nc] == 0:
+                v += 1
+        score -= v * 12
+    if gcr >= 0:
+        v = 0
+        for d in range(4):
+            nr = gcr + ORTH[d][0]; nc = gcc + ORTH[d][1]
+            if _in_palace(nr, nc, 2) and piece[nr*COLS+nc] == 0:
+                v += 1
+        score += v * 12
+
+    # --- loose pieces (v1 term, kept) ------------------------------------
+    cdef int risk_h = 0, risk_c = 0
+    for idx in range(90):
+        pc = piece[idx]
+        if pc == 0 or pc == 6:
+            continue
+        s = side[idx]
+        if s == 1:
+            if amap[90 + idx]:
+                risk_h += DEF_W[pc] if amap[idx] else UNDEF_W[pc]
+        else:
+            if amap[idx]:
+                risk_c += DEF_W[pc] if amap[90 + idx] else UNDEF_W[pc]
+    score -= risk_h
+    score += risk_c
+
+    # --- endgame lock onto official points --------------------------------
+    if g_base_ply >= 120:
+        score += material * 2
+    elif g_base_ply >= 80:
+        score += material
+    return score
+
+
 # -------------------------------------------------------------- search state
 from libc.math cimport log
 
@@ -878,6 +1145,8 @@ cdef int MATE_BOUND = MATE - 4096
 # Late-move reduction table, indexed [depth][move index].
 cdef int LMRTAB[64][64]
 
+cdef long long g_seecalls = 0
+cdef long long g_gencalls = 0
 cdef long long g_nodes = 0
 cdef long long g_qnodes = 0
 cdef long long g_tthits = 0
@@ -895,6 +1164,7 @@ cdef int g_use_fut = 1
 cdef int g_use_lmp = 1
 cdef int g_use_asp = 1
 cdef int g_use_rep = 1
+cdef int g_eval_ver = 2      # 1 = original evaluator, 2 = the Janggi-aware one
 
 # Repetition: hashes along the current search line plus the hashes of game
 # positions since the last capture, which Python supplies.
@@ -941,7 +1211,7 @@ cdef int _time_up():
 
 cdef inline int _eval_for(int* piece, int* side, int who):
     """Static score from `who`'s point of view."""
-    cdef int s = _evaluate(piece, side)
+    cdef int s = _evaluate2(piece, side) if g_eval_ver == 2 else _evaluate(piece, side)
     return -s if who == 2 else s
 
 
@@ -1046,9 +1316,13 @@ cdef int _qsearch(int* piece, int* side, int who, int alpha, int beta, int ply):
             # score to alpha, so the whole capture is irrelevant.
             if cap != 6 and stand + PVAL[cap] + 200 < alpha:
                 continue
-            # SEE pruning is safe for optional captures, never for forced evasions.
-            if _see(piece, side, fr, fc, tr, tc) < 0:
-                continue
+            # SEE pruning is safe for optional captures, never for forced
+            # evasions. A capture whose victim is worth at least as much as the
+            # attacker can never come out negative -- worst case the attacker
+            # is lost and the victim kept -- so the call is skippable outright.
+            if PVAL[cap] < PVAL[piece[fr*COLS+fc]]:
+                if _see(piece, side, fr, fc, tr, tc) < 0:
+                    continue
         _make(piece, side, fr, fc, tr, tc)
         # Pseudo-legal moves that leave our own general attacked are illegal.
         if _in_check(piece, side, who):
@@ -1170,18 +1444,21 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
         prev_mt = (h_fr[h_top-1]*COLS + h_fc[h_top-1])*90 + (h_tr[h_top-1]*COLS + h_tc[h_top-1])
     cm = counterm[(who-1)*8100 + prev_mt] if prev_mt >= 0 else -1
 
+    # Ordering keys only -- legality is checked lazily, when a move is actually
+    # played. Testing every pseudo-move up front cost a make/unmake and a full
+    # attack scan for all ~35 moves at every node, when alpha-beta typically
+    # cuts off after two or three of them.
     for m in range(n):
         fr = buf[m*5]; fc = buf[m*5+1]; tr = buf[m*5+2]; tc = buf[m*5+3]; cap = buf[m*5+4]
-        _make(piece, side, fr, fc, tr, tc)
-        if _in_check(piece, side, who):
-            _unmake(piece, side)
-            continue
-        _unmake(piece, side)
         mt = (fr*COLS+fc)*90 + (tr*COLS+tc)
         if tt_move >= 0 and mt == tt_move:
             bucket = 7
             sub = 0
         elif cap != 0:
+            # Ordering keeps the exact SEE. Approximating it here (victim minus
+            # attacker) saved the call but ordered winning captures worse, and
+            # a depth-12 opening search went from 2.5M nodes to 4.2M -- the
+            # ordering is worth far more than the calls it costs.
             see_v = _see(piece, side, fr, fc, tr, tc)
             if see_v >= 0:
                 bucket = 6
@@ -1206,7 +1483,7 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
         nl += 1
 
     if nl == 0:
-        # No legal move at all: in Janggi that loses on the spot.
+        # No pseudo-move at all: in Janggi that loses on the spot.
         return -MATE + ply
 
     # insertion sort desc by mkey
@@ -1229,6 +1506,7 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
     cdef int best_move = -1
     cdef int reduce, gives_check, new_depth, quiets, di, mi
     cdef int fut_margin = 0
+    cdef int played = 0          # legal moves actually searched at this node
     quiets = 0
     if g_use_fut and not in_chk and not is_pv and depth <= 3:
         fut_margin = static_eval + 120 * depth + 180
@@ -1249,18 +1527,22 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
                     and best_score > -MATE_BOUND):
                 quiets += 1
                 continue
-        if cap == 0:
-            quiets += 1
 
         _make(piece, side, fr, fc, tr, tc)
+        # Now that the move is on the board, is it even legal?
+        if _in_check(piece, side, who):
+            _unmake(piece, side)
+            continue
+        if cap == 0:
+            quiets += 1
         gives_check = _in_check(piece, side, 3 - who)
         new_depth = depth - 1 + extend
 
         reduce = 0
         if (g_use_lmr and extend == 0 and cap == 0 and not gives_check
-                and depth >= 3 and i >= 2):
+                and depth >= 3 and played >= 2):
             di = depth if depth < 63 else 63
-            mi = i if i < 63 else 63
+            mi = played if played < 63 else 63
             reduce = LMRTAB[di][mi]
             if is_pv and reduce > 0:
                 reduce -= 1
@@ -1269,7 +1551,7 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
             if reduce < 0:
                 reduce = 0
 
-        if i == 0 or not g_use_pvs:
+        if played == 0 or not g_use_pvs:
             score = -_negamax(piece, side, 3 - who, new_depth - reduce,
                               -beta, -alpha, ply + 1, is_pv, 1)
             if reduce and score > alpha and not g_timeout:
@@ -1287,6 +1569,7 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
                 score = -_negamax(piece, side, 3 - who, new_depth,
                                   -beta, -alpha, ply + 1, is_pv, 1)
         _unmake(piece, side)
+        played += 1
 
         if g_timeout:
             if extend:
@@ -1309,6 +1592,12 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
 
     if extend:
         g_ext += 1
+
+    if played == 0:
+        # Every pseudo-move was illegal, or every one that was not got pruned.
+        # Pruning never fires while best_move is unset, so this really is
+        # "no legal move" -- which loses in Janggi, checked or not.
+        return -MATE + ply
 
     cdef signed char flag = 0
     if best_score <= alpha_orig:
@@ -1383,11 +1672,12 @@ cdef void _sort_root():
 def core_reset(int max_depth, int ext_budget, int use_tt=1, int use_lmr=1,
                int use_ext=1, int use_nmp=1, int use_pvs=1, int use_fut=1,
                int use_lmp=1, int use_asp=1, int use_rep=1,
-               long long node_limit=0):
+               long long node_limit=0, int eval_version=2):
     """Reset TT / killers / history / stats for a fresh Engine.search()."""
     global g_nodes, g_qnodes, g_tthits, g_timeout, g_ext, g_maxdepth
     global g_use_tt, g_use_lmr, g_use_ext, g_use_nmp, g_use_pvs
     global g_use_fut, g_use_lmp, g_use_asp, g_use_rep, g_node_limit, n_game_hash
+    global g_eval_ver
     cdef int i
     for i in range(TT_SIZE):
         tt_flag[i] = -1
@@ -1398,6 +1688,8 @@ def core_reset(int max_depth, int ext_budget, int use_tt=1, int use_lmr=1,
         histh[i] = 0
         counterm[i] = -1
     g_nodes = 0; g_qnodes = 0; g_tthits = 0
+    global g_seecalls, g_gencalls
+    g_seecalls = 0; g_gencalls = 0
     g_timeout = 0
     g_ext = ext_budget
     g_maxdepth = max_depth
@@ -1405,6 +1697,7 @@ def core_reset(int max_depth, int ext_budget, int use_tt=1, int use_lmr=1,
     g_use_nmp = use_nmp; g_use_pvs = use_pvs; g_use_fut = use_fut
     g_use_lmp = use_lmp; g_use_asp = use_asp; g_use_rep = use_rep
     g_node_limit = node_limit
+    g_eval_ver = eval_version
     n_game_hash = 0
 
 
@@ -1595,6 +1888,9 @@ def core_negamax(int[::1] piece, int[::1] side, int who, int depth,
 def core_stats():
     return (g_nodes, g_qnodes, g_tthits)
 
+def core_diag():
+    return (g_seecalls, g_gencalls)
+
 
 def core_perft(int[::1] piece, int[::1] side, int who, int depth):
     """Legal-move perft on the int arrays (verification)."""
@@ -1625,11 +1921,13 @@ def core_see(int[::1] piece, int[::1] side, int fr, int fc, int tr, int tc):
     return _see(&piece[0], &side[0], fr, fc, tr, tc)
 
 
-def core_eval(int[::1] piece, int[::1] side, int base_ply):
-    """evaluate(board, include_mobility=False)."""
+def core_eval(int[::1] piece, int[::1] side, int base_ply, int version=1):
+    """evaluate(board, include_mobility=False). version=1 is the original."""
     global g_base_ply, h_top
     g_base_ply = base_ply
     h_top = 0
+    if version == 2:
+        return _evaluate2(&piece[0], &side[0])
     return _evaluate(&piece[0], &side[0])
 
 

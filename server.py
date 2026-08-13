@@ -55,8 +55,23 @@ def _bad_request(exc: BadRequest):
     return jsonify({"error": str(exc)}), 400
 
 # Opening book learned from recorded games (gibo). Loaded once at startup.
+#
+# OFF by default, because it was measured to cost strength rather than add it.
+# The book holds 517 positions from 18 amateur games, and almost every entry is
+# backed by a single game (the highest move count in the whole file is 2), so
+# consulting it means replaying one player's opening instead of searching.
+# Sampling six of those games: on the 121 positions where the book disagreed
+# with a depth-12 search, the book move was clearly worse 70 times and clearly
+# better 3 times, losing 138 centipawns on average and 1101 at worst -- for the
+# first 30 moves of every game.
+#
+# Set JANGGI_USE_BOOK=1 to switch it back on. Doing that usefully needs either
+# many more games per position, or a quality gate that only accepts a book move
+# the search also likes; the machinery in janggi/book.py is unchanged and ready
+# for either.
 _BOOK_PATH = os.path.join(os.path.dirname(__file__), "data", "opening_book.json")
-OPENING_BOOK = load_book(_BOOK_PATH)
+USE_BOOK = os.environ.get("JANGGI_USE_BOOK", "") not in ("", "0", "false", "False")
+OPENING_BOOK = load_book(_BOOK_PATH) if USE_BOOK else {}
 
 
 def grid_to_json(board: Board) -> list[list[str | None]]:
