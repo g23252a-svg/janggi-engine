@@ -1,6 +1,58 @@
 # Changelog
 
-## Unreleased — strength patch
+## Unreleased — phone patch
+
+The board UI was a desktop page that a phone happened to be able to open. It is
+now a phone page: installable to the home screen, sized to the screen it is on,
+and rendered at the screen's real pixel density.
+
+Verified with a real browser at five viewports (375×667 @2, 390×844 @3,
+412×915 @2.6, 744×1133 @2, 1280×900 @1). On every one of them the whole board
+and both 최선 수 buttons are on screen without scrolling, the canvas backing
+store matches the physical pixels exactly, nothing scrolls sideways, and no
+control is under 44px.
+
+### Added
+
+- **Installable to a home screen** — `web/manifest.webmanifest`, a service
+  worker and the icons, served from the app root by Flask and copied into the
+  Pages build. The worker caches the shell so the page opens offline; it
+  deliberately never caches `/api/`, because a stale best move presented as a
+  fresh one is worse than an error.
+- Tests that the page can actually fetch everything it references, on both
+  builds: the markup is scanned for relative `href`/`src` and each one is
+  required to be a 200 under Flask and a file in the Pages build. A missing
+  icon is otherwise a silent 404 that only shows up as "it won't install".
+
+### Fixed
+
+- **The board was drawn at 450×500 and stretched.** On a 3× phone that is 450
+  logical pixels smeared over ~1100 physical ones, so every piece was soft. The
+  canvas backing store is now `devicePixelRatio`-scaled and the drawing code
+  runs through one transform, so the board is sharp at 1098×1220 where it used
+  to be 450×500.
+- **The board was sized by width alone**, so on a phone it filled the width and
+  pushed the engine's recommendation below the fold — the two things you need
+  to see at once were never on screen together. It is capped by the available
+  height as well now, measured from the layout rather than a constant, with a
+  300px floor because below that the cells stop being reliable touch targets.
+- **`window.innerHeight` is the wrong number on a phone.** It includes the
+  space behind the URL bar, and read in the frame that unhides the board it
+  reported 822 on a 667px viewport, which sized the board past the bottom of
+  the screen. Sizing uses `visualViewport` and happens a frame later.
+- **Landscape put the board above the panel**, so neither fitted on a 390px-tall
+  screen. They sit side by side under 560px of height; page height at 844×390
+  went 858 → 540.
+- Controls were 36px tall. Everything tappable is at least 44px, secondary
+  controls fold into a 설정 · 기보 disclosure so the board starts near the top
+  of the screen, and `touch-action: manipulation` removes the 300ms tap delay
+  and double-tap zoom.
+- Safe-area insets are respected, so nothing hides under a notch or a home
+  indicator, and the page no longer rubber-bands away under a finger that
+  misses the board.
+
+
+## Previous — strength patch
 
 Against the engine deployed before it (`d6686b8`), both compiled, at an equal
 0.5 s per move over colour-swapped seeded openings:
@@ -68,7 +120,7 @@ Against the engine deployed before it (`d6686b8`), both compiled, at an equal
   ordering quality is worth more than the calls it saves.
 
 
-## Previous — large improvement patch
+## Earlier — large improvement patch
 
 Measured against the previous engine (commit `9b5a7c3`), both compiled, at an
 equal 0.5 s per move over 15 seeded openings played twice with colours swapped:

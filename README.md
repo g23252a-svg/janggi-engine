@@ -143,6 +143,22 @@ check was returning a verdict from whichever of the four rays happened to be
 tried first, so the engine disagreed with its own mirror image in 597 of 871
 random positions.
 
+## On a phone
+
+The board UI is built for a phone, not merely tolerant of one. Open the site
+and it works; use **홈 화면에 추가 / Add to Home Screen** and it installs as an
+app with its own icon, no browser chrome, and a shell that opens offline.
+
+- The board is sized to the screen it is on — capped by height as well as
+  width, so the board and the engine's recommendation are visible at once —
+  and drawn at the screen's real pixel density rather than stretched.
+- Everything tappable is at least 44px. Secondary controls fold into a
+  **설정 · 기보** disclosure so the board starts near the top of the screen.
+- In landscape the board moves beside the panel instead of above it.
+- Analysis still needs the engine: on the Pages build it runs in the page under
+  Pyodide, and on a Flask/Railway deployment it comes from the server. Only the
+  shell is cached, never a move.
+
 ## Play it in the browser (GitHub Pages)
 
 The board UI is published as a static site with the engine running **inside the
@@ -185,6 +201,7 @@ python server.py            # http://localhost:8080
 | --- | --- |
 | `GET /` | board UI |
 | `GET /health` | liveness probe |
+| `GET /manifest.webmanifest`, `/sw.js`, `/icon-<size>.png` | home-screen install |
 | `POST /api/new` | start position for the chosen formations |
 | `POST /api/analyze` | best move, score, depth, node count and principal variation |
 | `POST /api/legal` | legal moves for one square, repetition-aware |
@@ -229,6 +246,7 @@ web/
   build_site.py    assembles the GitHub Pages site
   browser-engine.js  answers /api/ calls from Pyodide instead of a server
   engine_api.py    the analysis API without a web framework
+  manifest.webmanifest, sw.js, icon-*.png  home-screen install (both builds)
 tests/
   test_engine.py   rules, make/unmake, Zobrist, engine sanity
   test_parity.py   perft references, Python/Cython equality, board invariants

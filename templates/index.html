@@ -2,25 +2,54 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>장기 분석 엔진</title>
+<meta name="theme-color" content="#E8C98A" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="장기" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="apple-touch-icon" href="icon-180.png" />
+<!-- Named explicitly so the browser stops asking for /favicon.ico, which
+     neither build serves. Relative, like every other asset here, so the same
+     markup works at / under Flask and at /<repo>/ under Pages. -->
+<link rel="icon" href="icon-192.png" type="image/png" />
 <style>
   :root { --line:#6B4F2A; --bg:#E8C98A; }
   * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
   body { font-family: system-ui, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
-         margin: 0; padding: 1.5rem 1rem; background:#faf7f0; color:#222; }
+         margin: 0; background:#faf7f0; color:#222;
+         /* Respect notches and home indicators, and stop the page rubber-banding
+            away under a finger that misses the board. */
+         padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+                  max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+         overscroll-behavior-y: contain; }
   .wrap { max-width: 520px; margin: 0 auto; }
+  /* Every control is a touch target first. 44px is the smallest a thumb hits
+     reliably; the whole toolbar used to be 36px. touch-action removes the
+     300ms tap delay and the double-tap-to-zoom that fires when you tap twice
+     quickly on a button. */
+  button, select, input[type=checkbox], label { touch-action: manipulation; }
   h1 { font-size: 1.3rem; font-weight: 600; margin: 0 0 1rem; }
   .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
   label { font-size: 13px; color:#555; }
-  select, button { font: inherit; padding: 8px 12px; border-radius: 8px;
-                   border:1px solid #ccc; background:#fff; cursor:pointer; }
+  select, button { font: inherit; padding: 10px 14px; border-radius: 10px;
+                   border:1px solid #ccc; background:#fff; cursor:pointer;
+                   min-height: 44px; }
+  button:active { background:#eee; }
   button.primary { border:2px solid #1565C0; }
   button.cho { border-color:#1565C0; color:#1565C0; }
   button.han { border-color:#C0392B; color:#C0392B; }
   button.warn { border-color:#999; color:#444; }
   #status { font-size: 14px; color:#555; margin: 8px 0; min-height: 20px; }
-  canvas { background: var(--bg); border-radius: 8px; max-width:100%; touch-action:none; display:block; margin:0 auto; }
+  /* The canvas is sized in JS: the backing store is scaled by devicePixelRatio
+     so the board is sharp on a phone screen, and the CSS size is chosen to fit
+     the viewport height as well as its width, so the board and the engine's
+     recommendation are on screen together without scrolling. */
+  canvas { background: var(--bg); border-radius: 8px; touch-action:none;
+           display:block; margin:0 auto; }
   #result { margin-top: 12px; padding: 12px 14px; background:#f1efe8; border-radius:8px;
             font-size: 14px; display:block; min-height: 132px; box-sizing: border-box; }
   .cap { color:#C0392B; }
@@ -33,6 +62,33 @@
            text-align:center; font-weight:600; }
   #judge.cho { background:#E3F2FD; color:#1565C0; }
   #judge.han { background:#FBE9E7; color:#C0392B; }
+
+  /* Secondary controls fold away so the board sits near the top of a phone
+     screen instead of below five rows of wrapped buttons. */
+  #game { display: block; }
+  details.tools { margin-bottom: 10px; }
+  details.tools > summary { list-style: none; cursor: pointer; min-height: 44px;
+      display: flex; align-items: center; gap: 6px; font-size: 14px; color:#555;
+      padding: 0 4px; }
+  details.tools > summary::-webkit-details-marker { display: none; }
+  details.tools > summary::after { content: "▾"; transition: transform .15s; }
+  details.tools[open] > summary::after { transform: rotate(180deg); }
+
+  /* Landscape on a phone is short: put the board beside the panel rather than
+     above it, or neither fits. */
+  @media (orientation: landscape) and (max-height: 560px) {
+    .wrap { max-width: none; }
+    #game { display: grid; grid-template-columns: auto minmax(240px, 1fr);
+            column-gap: 14px; align-items: start; }
+    /* The board takes the left column and spans however many rows the panel
+       ends up needing; every other child flows down the right column in
+       document order. `1 / -1` would NOT do this -- it resolves against the
+       explicit grid, which has no rows here, so the canvas would occupy one
+       row and the panel would start below the board. */
+    #game > canvas { grid-column: 1; grid-row: 1 / span 99; align-self: start; }
+    #game > *:not(canvas) { grid-column: 2; }
+    #game > #result { max-height: 40vh; overflow: auto; }
+  }
 </style>
 </head>
 <body>
@@ -67,26 +123,31 @@
 
   <div id="game" style="display:none;">
     <div class="row">
-      <label>분석 시간</label>
-      <select id="time">
-        <option value="2">빠름 (깊이5)</option>
-        <option value="4" selected>표준 (깊이6, 권장)</option>
-        <option value="6">깊게 (깊이7, 느림)</option>
-      </select>
-      <button id="flipBtn">판 뒤집기</button>
-      <button id="undoBtn">한수 무르기</button>
-      <button id="passBtn">한수 쉼</button>
-      <button class="warn" id="newBtn">처음으로 (새 게임)</button>
+      <button id="undoBtn" style="flex:1;">한수 무르기</button>
+      <button id="flipBtn" style="flex:1;">판 뒤집기</button>
     </div>
 
-    <div class="row">
-      <label><input type="checkbox" id="autoChk" checked /> 자동 분석 (수를 둘 때마다 최선 수 표시)</label>
-    </div>
-    <div class="row">
-      <button id="saveBtn">기보 저장</button>
-      <button id="loadBtn">기보 불러오기</button>
-      <input type="file" id="loadFile" accept="application/json,.json" style="display:none" />
-    </div>
+    <details class="tools">
+      <summary>설정 · 기보</summary>
+      <div class="row">
+        <label>분석 시간</label>
+        <select id="time">
+          <option value="2">빠름</option>
+          <option value="4" selected>표준 (권장)</option>
+          <option value="6">깊게 (느림)</option>
+        </select>
+        <button id="passBtn">한수 쉼</button>
+      </div>
+      <div class="row">
+        <label><input type="checkbox" id="autoChk" checked /> 자동 분석 (수를 둘 때마다 최선 수 표시)</label>
+      </div>
+      <div class="row">
+        <button id="saveBtn">기보 저장</button>
+        <button id="loadBtn">기보 불러오기</button>
+        <button class="warn" id="newBtn">처음으로</button>
+        <input type="file" id="loadFile" accept="application/json,.json" style="display:none" />
+      </div>
+    </details>
 
     <div class="scorebar">
       <span><b class="cho">초</b> <span id="choScore">0</span>점</span>
@@ -111,8 +172,76 @@
 
 <script>
 const ROWS=10, COLS=9, M=25, MOVE_LIMIT=200;
+const BW=450, BH=500;                       // logical drawing size, never changes
 const cvs=document.getElementById('board'), ctx=cvs.getContext('2d');
-const CW=(450-2*M)/(COLS-1), CH=(500-2*M)/(ROWS-1);
+const CW=(BW-2*M)/(COLS-1), CH=(BH-2*M)/(ROWS-1);
+let boardScale=1;                           // backing-store pixels per logical pixel
+
+// How much of the page is actually on screen. NOT window.innerHeight: that
+// includes the space behind the browser's URL bar, and read straight after the
+// board is unhidden it can report the pre-layout height entirely (measured at
+// 822 on a 667px viewport), which sized the board past the bottom of the
+// screen. visualViewport is the number that matches what a thumb can see.
+function viewportHeight(){
+  const vv=window.visualViewport;
+  return Math.round(vv && vv.height ? vv.height : window.innerHeight);
+}
+
+// How much vertical space the board does not get. Everything above it is
+// measured rather than assumed, so adding a control cannot silently push the
+// board off the bottom of a small phone; below it a fixed slice is kept for
+// the analyse buttons and the first line of the recommendation. Reserving the
+// whole result box was tried and is worse -- it is 132px of mostly blank space
+// and paying for it took the board on a 667px phone down to 216px, where the
+// cells are too small to tap.
+const BELOW_BOARD = 96;
+
+function reservedHeight(host, shortLandscape){
+  if(shortLandscape) return 16;             // board and panel sit side by side
+  const h=host.getBoundingClientRect(), c=cvs.getBoundingClientRect();
+  const above=c.top-h.top;                  // toolbar, scorebar, status line
+  const title=h.top+window.scrollY;         // page heading and the safe area
+  return title+above+BELOW_BOARD;
+}
+
+// Size the board to the screen. Two things matter on a phone that do not on a
+// desktop: the backing store has to be scaled by devicePixelRatio or a 450px
+// canvas gets stretched over ~1100 physical pixels and every piece looks
+// smudged; and the board has to be capped by the available HEIGHT too, or it
+// fills the width, pushes the engine's recommendation off-screen, and you end
+// up scrolling back and forth between the two things you need to see at once.
+function fitBoard(){
+  const host=cvs.parentElement;
+  const avail=host.clientWidth || window.innerWidth;
+  if(avail<=0) return;                      // still hidden; called again on show
+  const shortLandscape=window.matchMedia('(orientation: landscape) and (max-height: 560px)').matches;
+  const maxH=Math.max(240, viewportHeight()-reservedHeight(host, shortLandscape));
+  // Never shrink below 300 (or the width, on a narrower screen): the board is
+  // 9 files wide, so under that the cells stop being reliable touch targets
+  // and a slightly taller page is the better trade.
+  const floor=Math.min(avail, 300);
+  const w=Math.max(floor, Math.min(avail, maxH*(BW/BH), 520));
+  const h=w*(BH/BW);
+  const dpr=Math.min(window.devicePixelRatio||1, 3);
+  cvs.style.width=w+'px';
+  cvs.style.height=h+'px';
+  cvs.width=Math.round(w*dpr);
+  cvs.height=Math.round(h*dpr);
+  boardScale=(w*dpr)/BW;
+  if(board) draw();
+}
+
+// Measuring in the frame that unhid the board reads a layout that has not
+// happened yet, so every entry point goes through here instead.
+function fitBoardSoon(){ requestAnimationFrame(fitBoard); }
+
+window.addEventListener('resize', fitBoardSoon);
+window.addEventListener('orientationchange', ()=>setTimeout(fitBoard, 150));
+if(window.visualViewport){
+  // Fires when the URL bar slides away, which changes the usable height
+  // without firing a window resize.
+  window.visualViewport.addEventListener('resize', fitBoardSoon);
+}
 const NAMES={ h:{K:'漢',C:'車',P:'包',M:'馬',S:'象',G:'士',J:'兵'},
              c:{K:'楚',C:'車',P:'砲',M:'馬',S:'象',G:'士',J:'卒'} };
 const FULL={K:'궁',C:'차',P:'포',M:'마',S:'상',G:'사',J:'졸'};
@@ -189,10 +318,11 @@ function updateScoreBar(){
 }
 
 function draw(){
-  ctx.fillStyle='#E8C98A';ctx.fillRect(0,0,450,500);
+  ctx.setTransform(boardScale,0,0,boardScale,0,0);
+  ctx.fillStyle='#E8C98A';ctx.fillRect(0,0,BW,BH);
   ctx.strokeStyle='#6B4F2A';ctx.lineWidth=1;
-  for(let r=0;r<ROWS;r++){ctx.beginPath();ctx.moveTo(M,M+r*CH);ctx.lineTo(450-M,M+r*CH);ctx.stroke();}
-  for(let c=0;c<COLS;c++){ctx.beginPath();ctx.moveTo(M+c*CW,M);ctx.lineTo(M+c*CW,500-M);ctx.stroke();}
+  for(let r=0;r<ROWS;r++){ctx.beginPath();ctx.moveTo(M,M+r*CH);ctx.lineTo(BW-M,M+r*CH);ctx.stroke();}
+  for(let c=0;c<COLS;c++){ctx.beginPath();ctx.moveTo(M+c*CW,M);ctx.lineTo(M+c*CW,BH-M);ctx.stroke();}
   const pal=r0=>{ctx.beginPath();ctx.moveTo(M+3*CW,M+r0*CH);ctx.lineTo(M+5*CW,M+(r0+2)*CH);
     ctx.moveTo(M+5*CW,M+r0*CH);ctx.lineTo(M+3*CW,M+(r0+2)*CH);ctx.stroke();};
   pal(0);pal(7);
@@ -222,7 +352,7 @@ function draw(){
 cvs.addEventListener('click', async e=>{
   if(gameOver)return;
   const rect=cvs.getBoundingClientRect();
-  const px=(e.clientX-rect.left)*(450/rect.width),py=(e.clientY-rect.top)*(500/rect.height);
+  const px=(e.clientX-rect.left)*(BW/rect.width),py=(e.clientY-rect.top)*(BH/rect.height);
   let ddc=Math.round((px-M)/CW),ddr=Math.round((py-M)/CH);
   if(ddr<0||ddr>=ROWS||ddc<0||ddc>=COLS)return;
   const p=fromDisp(ddr,ddc), br=p[0], bc=p[1]; hint=null;
@@ -399,7 +529,8 @@ function startGame(){
     flip=(mySide==='han');
     turn='cho';gibo=[];choForm=cho;hanForm=han;
     document.getElementById('setup').style.display='none';
-    document.getElementById('game').style.display='block';
+    document.getElementById('game').style.display='';
+    fitBoardSoon();
     resultPlaceholder('대기 중');
     document.getElementById('judge').style.display='none';
     document.getElementById('status').textContent='초 차례입니다. 기물을 눌러 두세요.';
@@ -477,7 +608,8 @@ document.getElementById('loadFile').onchange=e=>{
           gibo.push(m);moveCount++;turn=m.side==='cho'?'han':'cho';
         });
         document.getElementById('setup').style.display='none';
-        document.getElementById('game').style.display='block';
+        document.getElementById('game').style.display='';
+        fitBoardSoon();
         resultPlaceholder('대기 중');
         document.getElementById('judge').style.display='none';
         document.getElementById('status').textContent='기보를 불러왔습니다 ('+moveCount+'수). '+(turn==='cho'?'초':'한')+' 차례.';
@@ -489,6 +621,14 @@ document.getElementById('loadFile').onchange=e=>{
   reader.readAsText(file);
   e.target.value='';  // allow re-loading the same file
 };
+
+// Installable to a home screen, and the shell keeps working offline (analysis
+// still needs the server).
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  });
+}
 </script>
 </body>
 </html>

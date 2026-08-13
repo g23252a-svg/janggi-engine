@@ -21,7 +21,7 @@ import json
 import os
 import threading
 
-from flask import Flask, jsonify, request, render_template
+from flask import Flask, jsonify, request, render_template, send_from_directory
 
 from janggi.board import Board, Move, HAN, CHO, FORMATIONS, ROWS, COLS
 from janggi.search import Engine, zobrist_hash
@@ -154,6 +154,33 @@ def index():
 @app.route("/health")
 def health():
     return jsonify({"status": "ok"})
+
+
+# The board UI is installable to a phone home screen. These have to be served
+# from the app root, not /static/, because a service worker can only control
+# pages at or below its own path.
+_WEB_DIR = os.path.join(os.path.dirname(__file__), "web")
+
+
+@app.route("/manifest.webmanifest")
+def manifest():
+    return send_from_directory(_WEB_DIR, "manifest.webmanifest",
+                               mimetype="application/manifest+json")
+
+
+@app.route("/sw.js")
+def service_worker():
+    response = send_from_directory(_WEB_DIR, "sw.js", mimetype="text/javascript")
+    # A stale worker keeps serving a stale shell, so never cache the worker.
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
+@app.route("/icon-<int:size>.png")
+def app_icon(size: int):
+    if size not in (180, 192, 512):
+        raise BadRequest("unknown icon size")
+    return send_from_directory(_WEB_DIR, f"icon-{size}.png", mimetype="image/png")
 
 
 @app.route("/api/new", methods=["POST"])
