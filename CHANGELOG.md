@@ -1,6 +1,24 @@
 # Changelog
 
-## Unreleased — phone patch
+Versions before 0.4.0 predate this file; `setup.py` sat at 0.3.0 through all
+three of the patches below, which is what 1.0.0's versioning work is about.
+
+## 1.0.0 — versioned, and three measured search changes
+
+### Added
+
+- **A version, in one place.** `janggi/_version.py` is the single source;
+  `setup.py`, `python -m janggi.cli --version`, `GET /health` and the board UI
+  all read it, and a test pins that they agree. Previously the only version in
+  the repository was `setup.py`'s `0.3.0`, and it stayed 0.3.0 through three
+  patches that each changed how the engine plays — a version nobody updates is
+  worse than no version, because it tells you the build is something it is not.
+- `GET /health` also reports `accel`, i.e. whether the compiled core actually
+  loaded. Deployments build the extensions and start on the pure-Python
+  fallback if that fails, so a deployment can be the right version and still be
+  an order of magnitude slower with nothing visibly wrong.
+
+## 0.6.0 — phone patch
 
 The board UI was a desktop page that a phone happened to be able to open. It is
 now a phone page: installable to the home screen, sized to the screen it is on,
@@ -52,7 +70,7 @@ control is under 44px.
   misses the board.
 
 
-## Previous — strength patch
+## 0.5.0 — strength patch
 
 Against the engine deployed before it (`d6686b8`), both compiled, at an equal
 0.5 s per move over colour-swapped seeded openings:
@@ -120,7 +138,7 @@ Against the engine deployed before it (`d6686b8`), both compiled, at an equal
   ordering quality is worth more than the calls it saves.
 
 
-## Earlier — large improvement patch
+## 0.4.0 — large improvement patch
 
 Measured against the previous engine (commit `9b5a7c3`), both compiled, at an
 equal 0.5 s per move over 15 seeded openings played twice with colours swapped:

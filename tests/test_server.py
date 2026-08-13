@@ -34,7 +34,9 @@ def start_grid(cho="msm_s", han="msm_s"):
 
 # ------------------------------------------------------------------- health
 def test_health(client):
-    assert client.get("/health").get_json() == {"status": "ok"}
+    body = client.get("/health").get_json()
+    assert body["status"] == "ok"
+    # version / accel are pinned in test_version.py, which owns that contract.
 
 
 # ------------------------------------------------------------------ /api/new

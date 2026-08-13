@@ -33,6 +33,7 @@
      quickly on a button. */
   button, select, input[type=checkbox], label { touch-action: manipulation; }
   h1 { font-size: 1.3rem; font-weight: 600; margin: 0 0 1rem; }
+  #ver { font-size: 0.75rem; font-weight: 400; color: #999; vertical-align: middle; }
   .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
   label { font-size: 13px; color:#555; }
   select, button { font: inherit; padding: 10px 14px; border-radius: 10px;
@@ -93,7 +94,9 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>장기 분석 엔진</h1>
+  <!-- Flask substitutes this through Jinja; the Pages build serves the file as
+       static HTML, so its build step substitutes the same placeholder itself. -->
+  <h1>장기 분석 엔진 <span id="ver">{{ version or '' }}</span></h1>
 
   <div id="setup">
     <div class="row">
