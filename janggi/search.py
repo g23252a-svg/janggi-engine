@@ -110,7 +110,6 @@ class SearchOptions:
     node_limit: int = 0             # 0 = unlimited; used for reproducible A/B
     eval_version: int = 2           # 1 = original evaluator, 2 = Janggi-aware
     use_improving: bool = True      # prune harder when the side to move is worse off
-    use_nmp_scale: bool = True      # scale the null-move reduction by the eval margin
     use_hist_lmr: bool = True       # scale the late-move reduction by move history
 
     _ALIASES = {
@@ -121,7 +120,7 @@ class SearchOptions:
         "extbudget": "ext_budget", "nodes": "node_limit",
         "eval": "eval_version",
         "imp": "use_improving", "improving": "use_improving",
-        "nmpscale": "use_nmp_scale", "histlmr": "use_hist_lmr",
+        "histlmr": "use_hist_lmr",
     }
 
     @classmethod
@@ -269,7 +268,6 @@ class Engine:
             opts.node_limit,
             opts.eval_version,
             1 if opts.use_improving else 0,
-            1 if opts.use_nmp_scale else 0,
             1 if opts.use_hist_lmr else 0,
         )
         deadline = (time.time() + self.time_limit) if self.time_limit else 0.0

@@ -139,7 +139,7 @@ python -m janggi.match --games 40 --depth-a 10 --depth-b 8
 ```
 
 Every technique can be switched off individually — `tt`, `lmr`, `ext`, `nmp`,
-`pvs`, `fut`, `lmp`, `asp`, `rep`, `imp`, `nmpscale`, `histlmr`, plus
+`pvs`, `fut`, `lmp`, `asp`, `rep`, `imp`, `histlmr`, plus
 `extbudget=` and `nodes=`. The same options are available in code through
 `SearchOptions`.
 
