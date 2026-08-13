@@ -44,6 +44,12 @@ def build(out_dir: pathlib.Path) -> None:
 
     shutil.copy2(WEB / "browser-engine.js", out_dir / "browser-engine.js")
     shutil.copy2(WEB / "engine_api.py", out_dir / "engine_api.py")
+    # Installable-to-home-screen assets. index.html references these by relative
+    # path so the same markup works under Flask at / and under Pages at
+    # /<repo>/, which a leading slash would break.
+    for asset in ("manifest.webmanifest", "sw.js",
+                  "icon-180.png", "icon-192.png", "icon-512.png"):
+        shutil.copy2(WEB / asset, out_dir / asset)
     for name in PACKAGE_MODULES:
         src = ROOT / "janggi" / name
         if not src.exists():

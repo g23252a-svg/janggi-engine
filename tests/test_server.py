@@ -6,7 +6,9 @@ be reachable with input that produced a 500 and a stack trace rather than a
 non-integer depth into int(), a history entry missing "fr" into a KeyError.
 """
 
+import json
 import os
+import re
 import sys
 
 import pytest
@@ -229,3 +231,39 @@ def test_analyze_searches_the_opening_instead_of_quoting_it(client):
     assert body.get("fromBook") is not True
     assert body["depthReached"] >= 1, "a real search should have run"
     assert body["nodes"] > 0
+
+
+# --------------------------------------------------------- home-screen assets
+def test_the_page_can_fetch_everything_it_references(client):
+    """The UI asks for the manifest, the icons and the service worker by
+    relative path, so under Flask they resolve to the app root. A route missing
+    here is a silent 404 on a phone -- the app just fails to install."""
+    html = client.get("/").get_data(as_text=True)
+    refs = set(re.findall(r'(?:href|src)="(?!https?:|/|#|data:)([^"]+)"', html))
+    refs |= set(re.findall(r"register\('([^']+)'\)", html))
+    assert "manifest.webmanifest" in refs, "parsed nothing; the regex needs updating"
+    for ref in sorted(refs):
+        assert client.get("/" + ref).status_code == 200, f"page references {ref}, server 404s"
+
+
+def test_the_manifest_is_valid_and_its_icons_exist(client):
+    r = client.get("/manifest.webmanifest")
+    assert r.mimetype == "application/manifest+json"
+    manifest = json.loads(r.get_data(as_text=True))
+    assert manifest["display"] == "standalone"
+    for icon in manifest["icons"]:
+        assert client.get("/" + icon["src"]).status_code == 200
+
+
+def test_the_service_worker_is_served_from_the_root_and_uncached(client):
+    """A worker can only control pages at or below its own path, so it has to
+    be at /sw.js and not /static/sw.js. And a cached worker keeps serving a
+    stale shell after a deploy, which is the classic way a PWA gets stuck."""
+    r = client.get("/sw.js")
+    assert r.status_code == 200
+    assert "javascript" in r.mimetype
+    assert "no-cache" in r.headers.get("Cache-Control", "")
+
+
+def test_an_unknown_icon_size_is_a_400_not_a_traversal(client):
+    assert client.get("/icon-64.png").status_code == 400

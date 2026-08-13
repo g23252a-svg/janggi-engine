@@ -7,7 +7,9 @@ from silently shipping a page with no engine in it.
 """
 
 import importlib.util
+import json
 import os
+import re
 import sys
 
 import pytest
@@ -56,6 +58,34 @@ def test_build_ships_every_module_the_page_loads(site):
     assert names, "could not parse the module list out of browser-engine.js"
     for name in names:
         assert (site / "janggi" / f"{name}.py").exists(), f"page loads {name}.py, build omits it"
+
+
+def test_build_ships_every_asset_the_page_references(site):
+    """Under Pages the site lives at /<repo>/, so index.html references its
+    assets relatively and a missing one is a 404 on the phone rather than a
+    build error. This is the same invariant test_server.py checks for Flask,
+    against the other build."""
+    html = (site / "index.html").read_text(encoding="utf-8")
+    refs = set(re.findall(r'(?:href|src)="(?!https?:|/|#|data:)([^"]+)"', html))
+    refs |= set(re.findall(r"register\('([^']+)'\)", html))
+    assert "manifest.webmanifest" in refs, "parsed nothing; the regex needs updating"
+    for ref in sorted(refs):
+        assert (site / ref).exists(), f"index.html references {ref}, build omits it"
+
+
+def test_build_ships_the_icons_the_manifest_declares(site):
+    manifest = json.loads((site / "manifest.webmanifest").read_text(encoding="utf-8"))
+    assert manifest["icons"], "an installable app needs at least one icon"
+    for icon in manifest["icons"]:
+        assert (site / icon["src"]).exists(), f"manifest declares {icon['src']}, build omits it"
+
+
+def test_the_service_worker_never_caches_an_engine_answer(site):
+    """The shell is cached so the page opens offline. A cached /api/ response
+    would be a stale best move presented as a fresh one, which is worse than
+    an error."""
+    sw = (site / "sw.js").read_text(encoding="utf-8")
+    assert "/api/" in sw and "return" in sw
 
 
 def test_build_excludes_modules_that_need_torch(site):
