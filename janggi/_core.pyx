@@ -1139,6 +1139,12 @@ cdef int killer2[MAXPLY]
 cdef int histh[2 * 8100]
 cdef int counterm[2 * 8100]         # counter-move: [side][previous move] -> reply
 
+# Static evaluation at each ply, so a node can ask whether its own side is
+# better off than it was two plies ago -- see `improving` in _negamax. NO_EVAL
+# marks a ply that never computed one (in check, or above the root).
+DEF NO_EVAL = -0x3FFFFFFF
+cdef int ply_eval[MAXPLY]
+
 # Mate scores are MATE - ply, so anything past this bound is a forced mate.
 cdef int MATE_BOUND = MATE - 4096
 
@@ -1165,6 +1171,9 @@ cdef int g_use_lmp = 1
 cdef int g_use_asp = 1
 cdef int g_use_rep = 1
 cdef int g_eval_ver = 2      # 1 = original evaluator, 2 = the Janggi-aware one
+cdef int g_use_improving = 1 # scale pruning by whether the position is improving
+cdef int g_use_nmp_scale = 1 # scale the null-move reduction by the eval margin
+cdef int g_use_hist_lmr = 1  # scale the late-move reduction by move history
 
 # Repetition: hashes along the current search line plus the hashes of game
 # positions since the last capture, which Python supplies.
@@ -1399,13 +1408,25 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
     cdef int static_eval = 0
     cdef int R, score
 
+    # Is this side better off than when it last moved? Ply-2 is the same
+    # side to move, so the comparison is like for like. A position that is
+    # getting worse is one where the quiet moves on offer are more likely to be
+    # useless, so it is pruned harder; one that is improving gets the benefit of
+    # the doubt. Unknown (in check here or there) counts as improving, which is
+    # the conservative side -- it prunes less.
+    cdef int improving = 1
+    ply_eval[ply] = NO_EVAL
+
     if not in_chk:
         static_eval = _eval_for(piece, side, who)
+        ply_eval[ply] = static_eval
+        if g_use_improving and ply >= 2 and ply_eval[ply-2] != NO_EVAL:
+            improving = 1 if static_eval > ply_eval[ply-2] else 0
 
         # Reverse futility: so far ahead that giving up a chunk per remaining
         # ply still beats beta.
         if (g_use_fut and not is_pv and depth <= 6 and beta < MATE_BOUND
-                and static_eval - 110 * depth >= beta):
+                and static_eval - (110 - 20 * (1 - improving)) * depth >= beta):
             return static_eval
 
         # Null-move pruning: pass and see whether the opponent can still not
@@ -1414,6 +1435,12 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
                 and static_eval >= beta and beta < MATE_BOUND
                 and _has_null_material(piece, side, who)):
             R = 3 + depth / 5
+            if g_use_nmp_scale:
+                # The further above beta the position already stands, the less
+                # of the tree the opponent's reply needs to disprove, so pass
+                # deeper. Capped at 3 so a runaway evaluation cannot reduce the
+                # verification search to nothing.
+                R += (static_eval - beta) / 200 if (static_eval - beta) / 200 < 3 else 3
             if R > depth - 1:
                 R = depth - 1
             _make_null()
@@ -1504,12 +1531,17 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
 
     cdef int best_score = -MATE * 2
     cdef int best_move = -1
-    cdef int reduce, gives_check, new_depth, quiets, di, mi
+    cdef int reduce, gives_check, new_depth, quiets, di, mi, hv
     cdef int fut_margin = 0
     cdef int played = 0          # legal moves actually searched at this node
     quiets = 0
     if g_use_fut and not in_chk and not is_pv and depth <= 3:
-        fut_margin = static_eval + 120 * depth + 180
+        fut_margin = static_eval + (120 - 25 * (1 - improving)) * depth + 180
+    # A position that is getting worse gets a shorter quiet list before
+    # late-move pruning gives up on it.
+    cdef int lmp_count = 4 + depth * depth
+    if not improving:
+        lmp_count = 2 + depth * depth / 2
 
     for i in range(nl):
         m = legal[i]
@@ -1519,7 +1551,7 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
         if cap == 0 and best_move >= 0 and not in_chk and not is_pv:
             # Late-move pruning: deep in a bad-looking quiet list, stop looking.
             if (g_use_lmp and depth <= 4 and best_score > -MATE_BOUND
-                    and quiets >= 4 + depth * depth):
+                    and quiets >= lmp_count):
                 quiets += 1
                 continue
             # Futility: this quiet move cannot plausibly reach alpha.
@@ -1546,6 +1578,18 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
             reduce = LMRTAB[di][mi]
             if is_pv and reduce > 0:
                 reduce -= 1
+            if not improving and reduce >= 0:
+                reduce += 1
+            if g_use_hist_lmr:
+                # A quiet move that has caused cutoffs all over this search is
+                # not a late move in any meaningful sense -- the ordering just
+                # has not caught up. Search it closer to full depth, and push
+                # the ones with a history of doing nothing further down.
+                hv = histh[(who-1)*8100 + mt]
+                if hv > 4000 and reduce > 0:
+                    reduce -= 1
+                elif hv == 0 and reduce > 0:
+                    reduce += 1
             if reduce > new_depth - 1:
                 reduce = new_depth - 1
             if reduce < 0:
@@ -1672,18 +1716,20 @@ cdef void _sort_root():
 def core_reset(int max_depth, int ext_budget, int use_tt=1, int use_lmr=1,
                int use_ext=1, int use_nmp=1, int use_pvs=1, int use_fut=1,
                int use_lmp=1, int use_asp=1, int use_rep=1,
-               long long node_limit=0, int eval_version=2):
+               long long node_limit=0, int eval_version=2,
+               int use_improving=1, int use_nmp_scale=1, int use_hist_lmr=1):
     """Reset TT / killers / history / stats for a fresh Engine.search()."""
     global g_nodes, g_qnodes, g_tthits, g_timeout, g_ext, g_maxdepth
     global g_use_tt, g_use_lmr, g_use_ext, g_use_nmp, g_use_pvs
     global g_use_fut, g_use_lmp, g_use_asp, g_use_rep, g_node_limit, n_game_hash
-    global g_eval_ver
+    global g_eval_ver, g_use_improving, g_use_nmp_scale, g_use_hist_lmr
     cdef int i
     for i in range(TT_SIZE):
         tt_flag[i] = -1
     for i in range(MAXPLY):
         killer1[i] = -1
         killer2[i] = -1
+        ply_eval[i] = NO_EVAL
     for i in range(2 * 8100):
         histh[i] = 0
         counterm[i] = -1
@@ -1698,6 +1744,9 @@ def core_reset(int max_depth, int ext_budget, int use_tt=1, int use_lmr=1,
     g_use_lmp = use_lmp; g_use_asp = use_asp; g_use_rep = use_rep
     g_node_limit = node_limit
     g_eval_ver = eval_version
+    g_use_improving = use_improving
+    g_use_nmp_scale = use_nmp_scale
+    g_use_hist_lmr = use_hist_lmr
     n_game_hash = 0
 
 

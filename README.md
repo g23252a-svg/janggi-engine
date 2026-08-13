@@ -54,6 +54,20 @@ Note on 빅장: facing generals is treated as a legal position, not as check and
 not as an illegal move. `Board.generals_face()` detects it for callers that
 want to apply a draw rule.
 
+## Version
+
+```bash
+python -m janggi.cli --version     # janggi-engine 1.0.0 (compiled core)
+curl <deployment>/health           # {"status":"ok","version":"1.0.0","accel":true}
+```
+
+`accel` is the half of the answer that is easy to miss: deployments compile the
+Cython extensions at build time and start on the pure-Python fallback if that
+fails, so a deployment can be the right version and still be two orders of
+magnitude slower with nothing visibly broken. `janggi/_version.py` is the single
+source of truth — `setup.py`, the CLI, the API and the board UI all read it, and
+a test pins that they agree.
+
 ## Install
 
 The engine runs on the Python standard library alone. Building the Cython
@@ -125,8 +139,9 @@ python -m janggi.match --games 40 --depth-a 10 --depth-b 8
 ```
 
 Every technique can be switched off individually — `tt`, `lmr`, `ext`, `nmp`,
-`pvs`, `fut`, `lmp`, `asp`, `rep`, plus `extbudget=` and `nodes=`. The same
-options are available in code through `SearchOptions`.
+`pvs`, `fut`, `lmp`, `asp`, `rep`, `imp`, `nmpscale`, `histlmr`, plus
+`extbudget=` and `nodes=`. The same options are available in code through
+`SearchOptions`.
 
 What that measurement currently says, at an equal 60k nodes per move:
 
