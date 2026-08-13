@@ -139,7 +139,7 @@ python -m janggi.match --games 40 --depth-a 10 --depth-b 8
 ```
 
 Every technique can be switched off individually — `tt`, `lmr`, `ext`, `nmp`,
-`pvs`, `fut`, `lmp`, `asp`, `rep`, `imp`, `histlmr`, plus
+`pvs`, `fut`, `lmp`, `asp`, `rep`, `histlmr`, plus
 `extbudget=` and `nodes=`. The same options are available in code through
 `SearchOptions`.
 
@@ -148,9 +148,18 @@ What that measurement currently says, at an equal 60k nodes per move:
 | technique | score with it on | verdict |
 | --- | ---: | --- |
 | the Janggi-aware evaluator (`eval=1` turns it off) | 75.0% of 80 | clearly better, +191 elo |
+| history-scaled late move reductions (`histlmr`) | 72.5% of 40 | clearly better, +168 elo |
 | futility + late-move pruning | 65.0% of 40 | clearly better |
 | late move reductions | 60.0% of 40 | better, not significant at this sample |
 | null-move pruning | 57.5% of 40 | positive, still not significant — untuned |
+
+Two changes were written for 1.0.0 and **not** kept, which is the more useful
+half of the table. An `improving` signal (prune harder when the side to move is
+worse off than two plies ago) cut a depth-12 search from 2.8M nodes to 1.4M and
+was worth exactly nothing — 20-20 of 40 measured directly against the change
+that does work. Halving the node count is also what pruning away good moves
+looks like. Scaling the null-move reduction by the evaluation margin scored
+19-21 of 40 and went the same way.
 
 A position and its mirror image must score exactly opposite. That test is in
 `tests/test_parity.py`, and it earned its place immediately: the cannon-screen

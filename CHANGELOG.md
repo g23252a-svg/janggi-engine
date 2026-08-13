@@ -3,9 +3,51 @@
 Versions before 0.4.0 predate this file; `setup.py` sat at 0.3.0 through all
 three of the patches below, which is what 1.0.0's versioning work is about.
 
-## 1.0.0 — versioned, and three measured search changes
+## 1.0.0 — versioned, and one search change that survived measurement
+
+### Measured, not assumed
+
+Three search changes were written. **One shipped.** Each was tested alone
+against no change at all, 40 colour-swapped games at an equal 60k nodes:
+
+| change | alone vs nothing | verdict |
+| --- | ---: | --- |
+| history-scaled late move reductions (`histlmr`) | 29-11 of 40, **72.5%**, +168 elo (CI 58.7..86.3) | **shipped** |
+| the `improving` signal | 24-16 of 40, 60.0%, +70 elo (CI 44.8..75.2) | dropped |
+| eval-scaled null-move reduction (`nmpscale`) | 19-21 of 40, 47.5%, -17 elo | dropped |
+
+The first attempt bundled all three and scored 73.3% of 60 against none, which
+looked like a clean win. It was not one: removing any *single* member was
+neutral, so the three were redundant substitutes rather than three additive
+gains, and the bundle's number said nothing about which to keep. Testing each
+alone is what separated them.
+
+`improving` is the instructive one. It cut a depth-12 opening search from 2.8M
+nodes to 1.4M — and was worth nothing. Measured directly on top of the change
+that does work it scored exactly 50.0% (20-20 of 40). Searching half the nodes
+is also what pruning away good moves looks like, which is the entire reason
+this repository measures instead of trusting a node count.
 
 ### Added
+
+- **History-scaled late move reductions.** A quiet move that has been causing
+  beta cutoffs all over the current search is not a "late" move in any real
+  sense — the ordering simply has not caught up with it — so it is searched
+  closer to full depth, while a move that has never done anything is pushed
+  further down. Worth +168 elo alone, and it barely changes the node count: it
+  reallocates depth rather than saving work.
+
+  The threshold is measured against the **largest history value seen this
+  search**, not a constant. `histh` is cleared once per search and grows without
+  bound (`+= depth*depth`), so a fixed cutoff means one thing in the first
+  iteration and another in the twelfth, and something else again at a different
+  time limit. A first version used the constant 4000 and scored 67.5% — but a
+  heuristic whose meaning drifts inside a single search is the same fault that
+  already caused a real bug here (the evaluator's endgame score-lock, 0.4.0), so
+  it was rebuilt on the running maximum rather than shipped on a good number.
+  The principled version measures better: 72.5% against the same opponent. Move
+  ordering still reads raw `histh`, so reductions changed and ordering did not —
+  moving both at once would have made this uninterpretable.
 
 - **A version, in one place.** `janggi/_version.py` is the single source;
   `setup.py`, `python -m janggi.cli --version`, `GET /health` and the board UI
