@@ -112,12 +112,23 @@ def _guards_alive(board: Board, side: int) -> int:
 
 
 def _cannon_has_screen(board: Board, r: int, c: int) -> bool:
+    """Is there a piece this cannon could actually jump over?
+
+    Any direction will do. This used to return on the first direction that
+    contained anything at all, so a cannon with a perfectly good screen to its
+    right was reported screenless whenever the nearest piece below it happened
+    to be another cannon -- and the answer depended on the order the four
+    directions were tried, which made the whole evaluation asymmetric between
+    the two sides.
+    """
     for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
         nr, nc = r + dr, c + dc
         while in_board(nr, nc):
             t = board._g[nr][nc]
             if t is not None:
-                return t[0] != "P"
+                if t[0] != "P":
+                    return True
+                break          # a cannon cannot be a screen; try another ray
             nr += dr
             nc += dc
     return False
@@ -134,9 +145,19 @@ except Exception:
     _HAVE_CEVAL = False
 
 
-def evaluate(board: Board, include_mobility: bool = True, ply: int | None = None) -> int:
+def evaluate(board: Board, include_mobility: bool = True, ply: int | None = None,
+             version: int = 1) -> int:
     """Static evaluation. Uses the Cython evaluator when the int arrays are
     live (identical results, verified); falls back to pure Python otherwise.
+
+    ``version`` selects the evaluator. Version 1 is the one mirrored below in
+    Python and pinned by the parity tests, so it is the default and works on
+    both paths. Version 2 is the Janggi-aware evaluator the compiled search
+    actually plays with -- game phase, chariot activity, 면포, blocked horse and
+    elephant legs, soldier structure, quadratic king danger. It measured 75% of
+    80 games against version 1 at an equal node budget (+191 elo). It exists
+    only in the compiled core, so asking for it without the extensions is an
+    error rather than a silent downgrade.
 
     ``ply`` is the number of moves played in the GAME, used only by the
     endgame score-lock. It must stay fixed for the duration of one search:
@@ -147,6 +168,18 @@ def evaluate(board: Board, include_mobility: bool = True, ply: int | None = None
     """
     if ply is None:
         ply = len(board._history)
+    if version == 2:
+        if not _HAVE_CEVAL:
+            raise RuntimeError(
+                "evaluator version 2 needs the compiled extensions; "
+                "build them with `python setup.py build_ext --inplace`"
+            )
+        score = _c_evaluate(board._pc, board._sd, ply, 2)
+        if include_mobility:
+            score += W_MOBILITY * (
+                len(board.generate_pseudo(HAN)) - len(board.generate_pseudo(CHO))
+            )
+        return score
     if _HAVE_CEVAL:
         if include_mobility:
             return _c_evaluate_mob(board._pc, board._sd, ply)

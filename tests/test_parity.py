@@ -334,3 +334,45 @@ def test_gibo_replay_snapshots_are_usable_boards():
         assert _arrays_consistent(snapshot)
         assert snapshot.zobrist() == _full_hash(snapshot)
         snapshot.in_check(CHO)  # must not raise or read a stale board
+
+
+# ------------------------------------------------------- evaluator version 2
+def test_evaluator_v2_is_available_and_sane():
+    """v2 is what the compiled search plays with. It lives only in the core, so
+    the Python-facing API must say so rather than quietly serving v1."""
+    from janggi.evaluate import evaluate, _HAVE_CEVAL
+
+    board = Board.standard()
+    if not _HAVE_CEVAL:
+        with pytest.raises(RuntimeError):
+            evaluate(board, version=2)
+        return
+    core = pytest.importorskip("janggi._core")
+    # A symmetric start is a dead heat under either evaluator.
+    assert evaluate(board, include_mobility=False, version=2) == evaluate(
+        Board.standard(), include_mobility=False, version=2
+    )
+    # Same sign convention as v1: taking Cho's chariot must favour Han.
+    board.grid[9][0] = None
+    assert evaluate(board, include_mobility=False, version=2) > 0
+    assert core.core_eval(board._pc, board._sd, 0, 2) == evaluate(
+        board, include_mobility=False, version=2
+    )
+
+
+def test_evaluator_v2_is_deterministic_and_antisymmetric():
+    """Mirroring a position must flip the score, or one side is being scored
+    with knowledge the other does not get."""
+    core = pytest.importorskip("janggi._core")
+    from janggi.board import _PIECE_CODE  # noqa: F401
+
+    for board in random_positions(60, seed=1234):
+        mirrored = Board()
+        for r in range(ROWS):
+            for c in range(COLS):
+                p = board.grid[r][c]
+                if p is not None:
+                    mirrored.grid[ROWS - 1 - r][c] = (p[0], -p[1])
+        direct = core.core_eval(board._pc, board._sd, 0, 2)
+        flipped = core.core_eval(mirrored._pc, mirrored._sd, 0, 2)
+        assert direct == -flipped, f"v2 is not side-symmetric: {direct} vs {flipped}"

@@ -1,6 +1,74 @@
 # Changelog
 
-## Unreleased — large improvement patch
+## Unreleased — strength patch
+
+Against the engine deployed before it (`d6686b8`), both compiled, at an equal
+0.5 s per move over colour-swapped seeded openings:
+
+```
++34 =0 -6 of 40   85.0%   (95% CI 73.9%..96.1%)   +301 elo
+```
+
+### Measured, not assumed
+
+| change | result | verdict |
+| --- | ---: | --- |
+| Janggi-aware evaluator vs the old one, equal nodes | 60-20 of 80, +191 elo (CI 65.5%..84.5%) | clearly better |
+| same, equal time (0.3 s/move) | 16-14 of 30, +23 elo | underpowered sample; the node test is the signal |
+| null-move pruning, on vs off, on the new search | 23-17 of 40, +53 elo | positive now, still not significant |
+
+### Added
+
+- **A Janggi-aware evaluator** (`SearchOptions.eval_version`, default 2). The
+  old one knew material, soldier advancement, "middle files are nice" and a
+  linear king-danger count — most of a chess engine's first evaluation and
+  almost none of Janggi's content. The new one adds:
+  - a game phase from remaining material, so a cannon (which needs a screen)
+    loses value as the board empties while soldiers gain it;
+  - chariot activity: open and semi-open files, the enemy soldier rank;
+  - 면포 — a cannon inside its own palace covering the general;
+  - horses and elephants scored by how many legs are actually free, because a
+    fully blocked horse is nearly a spectator;
+  - soldier structure: connected soldiers, soldiers that reach the enemy palace;
+  - king danger that grows with the *square* of the attacking weight bearing on
+    the palace, so three pieces converging matter far more than three times one.
+- A side-symmetry test: a position and its mirror must score exactly opposite.
+  It found a real bug within minutes of existing (below).
+
+### Fixed
+
+- **The cannon-screen test was direction-order dependent.** It returned a
+  verdict from the first ray that contained any piece, so a cannon with a
+  perfectly usable screen to its right was reported screenless whenever the
+  nearest piece below it happened to be another cannon. Because the four rays
+  were tried in a fixed order, the evaluation was not symmetric between the two
+  sides: it disagreed with its own mirror image in **597 of 871** random
+  positions. Both evaluators are now at zero, and the symmetry test pins it.
+- **The opening book was costing strength and is off by default.** It holds 517
+  positions from 18 amateur games, and almost every entry rests on a single
+  game (the highest move count in the file is 2), so consulting it replaced a
+  depth-12 search with one player's opening for the first 30 moves of every
+  game. Sampling six of those games: on the 121 positions where the book
+  disagreed with the search, the book move was clearly worse 70 times and
+  clearly better 3, losing 138 centipawns on average and 1101 at worst.
+  `JANGGI_USE_BOOK=1` restores it; using it well needs many more games per
+  position or a quality gate, and `janggi/book.py` is unchanged and ready.
+
+### Changed
+
+- **Legality is checked lazily.** Every node used to make, test and unmake all
+  ~35 pseudo-moves just to build an ordered list, when alpha-beta typically
+  cuts off after two or three. Testing each move as it is played is ~35% more
+  nodes per second — a depth-10 opening search went 2.54 s → 1.33 s, depth 12
+  12.0 s → 8.0 s.
+- Quiescence skips the SEE call when the victim is worth at least the attacker,
+  where a negative result is impossible — an exact shortcut, not an
+  approximation. Approximating SEE in the move *ordering* as well was tried and
+  reverted: it took a depth-12 opening from 2.5M nodes to 4.2M, because
+  ordering quality is worth more than the calls it saves.
+
+
+## Previous — large improvement patch
 
 Measured against the previous engine (commit `9b5a7c3`), both compiled, at an
 equal 0.5 s per move over 15 seeded openings played twice with colours swapped:

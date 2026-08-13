@@ -108,6 +108,7 @@ class SearchOptions:
     use_repetition: bool = True     # repetition detection inside the search
     ext_budget: int = 3             # extra plies a single branch may spend
     node_limit: int = 0             # 0 = unlimited; used for reproducible A/B
+    eval_version: int = 2           # 1 = original evaluator, 2 = Janggi-aware
 
     _ALIASES = {
         "tt": "use_tt", "lmr": "use_lmr", "ext": "use_ext", "nmp": "use_nmp",
@@ -115,6 +116,7 @@ class SearchOptions:
         "lmp": "use_lmp", "asp": "use_aspiration", "aspiration": "use_aspiration",
         "rep": "use_repetition", "repetition": "use_repetition",
         "extbudget": "ext_budget", "nodes": "node_limit",
+        "eval": "eval_version",
     }
 
     @classmethod
@@ -132,7 +134,7 @@ class SearchOptions:
             field_name = cls._ALIASES.get(key, key)
             if field_name not in cls.__dataclass_fields__:
                 raise ValueError(f"unknown search option {key!r}")
-            if field_name in ("ext_budget", "node_limit"):
+            if field_name in ("ext_budget", "node_limit", "eval_version"):
                 values[field_name] = int(raw)
             else:
                 values[field_name] = raw.strip() not in ("0", "false", "False", "no")
@@ -260,6 +262,7 @@ class Engine:
             1 if opts.use_aspiration else 0,
             1 if opts.use_repetition else 0,
             opts.node_limit,
+            opts.eval_version,
         )
         deadline = (time.time() + self.time_limit) if self.time_limit else 0.0
         frm, to, cap, score, depth, pv = core_search(

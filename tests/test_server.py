@@ -211,3 +211,21 @@ def test_json_to_board_keeps_accelerator_arrays_live():
     parsed = srv.json_to_board(srv.grid_to_json(board))
     assert parsed.in_check(CHO) is True
     assert parsed.zobrist() == board.zobrist()
+
+
+# ------------------------------------------------------------- opening book
+def test_opening_book_is_off_by_default():
+    """It was measured to lose ~138 centipawns a move against just searching;
+    see the note in server.py. This pins the default so it cannot drift back on
+    unnoticed."""
+    assert srv.USE_BOOK is False
+    assert srv.OPENING_BOOK == {}
+
+
+def test_analyze_searches_the_opening_instead_of_quoting_it(client):
+    body = client.post(
+        "/api/analyze", json={"board": start_grid(), "side": "cho", "time": 1.0}
+    ).get_json()
+    assert body.get("fromBook") is not True
+    assert body["depthReached"] >= 1, "a real search should have run"
+    assert body["nodes"] > 0
