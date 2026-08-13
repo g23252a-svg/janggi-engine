@@ -264,7 +264,8 @@ about four plies deeper. Played head to head at an equal 0.5 s per move, over
 15 seeded openings each played twice with colours swapped:
 
 ```
-NEW vs OLD (commit 9b5a7c3): +30 =0 -0 of 30
+vs commit 9b5a7c3 (two patches ago): +30 =0 -0 of 30
+vs commit d6686b8 (one patch ago):  +34 =0 -6 of 40   85.0%   +301 elo
 ```
 
 ## Roadmap

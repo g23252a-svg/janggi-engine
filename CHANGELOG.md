@@ -6,7 +6,7 @@ Against the engine deployed before it (`d6686b8`), both compiled, at an equal
 0.5 s per move over colour-swapped seeded openings:
 
 ```
-+24 =0 -6 of 30   80.0%   (95% CI 65.7%..94.3%)   +241 elo
++34 =0 -6 of 40   85.0%   (95% CI 73.9%..96.1%)   +301 elo
 ```
 
 ### Measured, not assumed
