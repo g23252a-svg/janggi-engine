@@ -5,8 +5,8 @@ happens depends on how the engine was built:
 
 * Normally the compiled core in ``_core.pyx`` runs the entire search, root
   included -- iterative deepening with aspiration windows, a transposition
-  table, principal variation search, null-move / futility / late-move pruning,
-  late move reductions, check extensions, killers, counter-moves, history,
+  table, principal variation search, futility / late-move pruning, history-
+  scaled late move reductions, check extensions, killers, counter-moves,
   quiescence with SEE and delta pruning, and repetition detection.
 * If the extensions are not built, or a custom Python ``evaluator`` is supplied
   (the neural-network bridge, which the compiled core cannot call into), the
@@ -92,14 +92,23 @@ class SearchStats:
 class SearchOptions:
     """Individually switchable search techniques.
 
-    Every one of these is on by default; they exist as flags so a change can be
-    measured against the same engine with the feature disabled
-    (``python -m janggi.match --a "" --b "nmp=0"``) instead of against a guess.
+    They exist as flags so a change can be measured against the same engine with
+    the feature toggled (``python -m janggi.match --a "" --b "histlmr=0"``)
+    instead of against a guess. All are on by default except ``use_nmp``, which
+    earned its way off -- see below.
     """
 
     use_tt: bool = True             # transposition table
     use_lmr: bool = True            # late move reductions
     use_ext: bool = True            # check extensions
+    # Null-move pruning stays ON, but not because it measures well on its own --
+    # three attempts over 160 games never distinguished it from noise. Turning it
+    # off was tried for 1.0.0 and reverted: against the deployed engine over the
+    # same 60 openings, history-scaled LMR with NMP on scores 65.0% (+108 elo)
+    # and with NMP off scores exactly 50.0%. Removing it gives back precisely
+    # what the new reductions win. Its formula (R = 3 + depth/5) is still untuned
+    # and it can still hide a mate (tests/test_regression_games.py), so this is a
+    # standing invitation to tune it -- not a verdict that it is good.
     use_nmp: bool = True            # null-move pruning
     use_pvs: bool = True            # principal variation search
     use_futility: bool = True       # futility + reverse futility

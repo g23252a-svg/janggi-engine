@@ -18,10 +18,16 @@ against live human opponents on online services.
   enough to show the rest are worse.
 - **Transposition table** with Zobrist hashing, depth-preferred replacement,
   and mate scores rebased onto the probing ply.
-- **Null-move pruning.** Passing is a legal option in Janggi, so the usual
-  chess worry about zugzwang does not apply the same way here.
+- **Null-move pruning.** Passing is legal in Janggi, so the usual zugzwang
+  worry does not apply. Three measurements over 160 games have never
+  distinguished it from noise, and it can hide a mate — but removing it costs
+  exactly what the history-scaled reductions win (65.0% vs 50.0% against the
+  same opponent over the same openings), so it stays on. Its formula
+  `R = 3 + depth/5` has never been tuned; that is the open work.
 - **Futility, reverse futility and late-move pruning**, plus late move
-  reductions from a depth × move-index table.
+  reductions from a depth × move-index table, scaled by how often the move has
+  caused a cutoff in this search — measured against the running maximum, not a
+  constant, so the test means the same thing at every depth and time limit.
 - **Quiescence search** with SEE and delta pruning: keeps resolving captures
   until the position is quiet, so a shallow search cannot misread the middle of
   an exchange.
@@ -131,8 +137,8 @@ colour-swapped pairs from seeded openings, and reports a score with a
 confidence interval:
 
 ```bash
-# does null-move pruning actually help, at an equal node budget?
-python -m janggi.match --games 100 --nodes 150000 --a "" --b "nmp=0"
+# is null-move pruning worth turning back on, at an equal node budget?
+python -m janggi.match --games 100 --nodes 150000 --a "nmp=1" --b ""
 
 # more depth for one side
 python -m janggi.match --games 40 --depth-a 10 --depth-b 8
@@ -151,7 +157,7 @@ What that measurement currently says, at an equal 60k nodes per move:
 | history-scaled late move reductions (`histlmr`) | 72.5% of 40 | clearly better, +168 elo |
 | futility + late-move pruning | 65.0% of 40 | clearly better |
 | late move reductions | 60.0% of 40 | better, not significant at this sample |
-| null-move pruning | 57.5% of 40 | positive, still not significant — untuned |
+| null-move pruning | 48.3% of 60, 57.5% of 40, 45.0% of 60 | never significant in 160 games — kept on only because removing it costs what `histlmr` wins |
 
 Two changes were written for 1.0.0 and **not** kept, which is the more useful
 half of the table. An `improving` signal (prune harder when the side to move is
