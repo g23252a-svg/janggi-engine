@@ -9,6 +9,7 @@ These tests pin that every place reporting a version reads the same one, and
 that the packaging metadata and the Pages build cannot drift from the package.
 """
 
+import importlib.util
 import pathlib
 import re
 import subprocess
@@ -28,10 +29,18 @@ def test_the_version_is_a_release_number():
     assert len(VERSION_INFO) == 3
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("setuptools") is None,
+    reason="setup.py needs setuptools; 3.12 does not bundle it and the "
+           "pure-Python CI job installs no build tools on purpose",
+)
 def test_setup_py_reports_the_package_version():
     """setup.py parses _version.py rather than carrying its own copy. If that
     parse ever silently fails it would fall back to something wrong, so ask
-    setuptools what it actually resolved."""
+    setuptools what it actually resolved.
+
+    Skipped where setuptools is absent -- that is an environment without
+    packaging tools, not a broken version. The compiled jobs all have it."""
     out = subprocess.run(
         [sys.executable, "setup.py", "--version"],
         cwd=ROOT, capture_output=True, text=True, timeout=120,
