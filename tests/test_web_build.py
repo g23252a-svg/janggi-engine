@@ -10,6 +10,7 @@ import importlib.util
 import json
 import os
 import re
+import subprocess
 import sys
 
 import pytest
@@ -48,6 +49,29 @@ def test_build_produces_a_runnable_page(site):
     assert (site / "browser-engine.js").exists()
     assert (site / "engine_api.py").exists()
     assert (site / ".nojekyll").exists(), "Jekyll would drop the janggi/ folder"
+
+
+def test_the_shipped_package_imports_on_its_own(site):
+    """Import the built site's engine in a fresh process whose only `janggi` is
+    the shipped one.
+
+    The other tests here load `site/engine_api.py` from inside pytest, where the
+    repository root is already on sys.path -- so `import janggi` silently
+    resolves to the source tree and a module the build forgot to copy goes
+    unnoticed. That is exactly what happened: adding `janggi/_version.py` and
+    importing it from `__init__` broke the Pages build, every test here passed,
+    and the deploy caught it. Running from the site directory in a subprocess is
+    the only way this file can tell the two copies apart.
+    """
+    out = subprocess.run(
+        [sys.executable, "-c",
+         "import engine_api; "
+         "b = engine_api.api_new({'cho': 'msm_s', 'han': 'msm_s'}); "
+         "assert b['board'], 'no start position'"],
+        cwd=site, capture_output=True, text=True, timeout=300,
+        env={**os.environ, "JANGGI_NO_ACCEL": "1", "PYTHONPATH": ""},
+    )
+    assert out.returncode == 0, out.stderr
 
 
 def test_build_ships_every_module_the_page_loads(site):

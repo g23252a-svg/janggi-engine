@@ -24,8 +24,8 @@ WEB = ROOT / "web"
 # nn_eval / nn_model / train / selfplay / arena need torch and are not imported
 # by janggi/__init__.py, so they stay out.
 PACKAGE_MODULES = [
-    "__init__.py", "board.py", "evaluate.py", "see.py", "search.py",
-    "score.py", "repetition.py", "gibo.py", "book.py", "mcts.py",
+    "__init__.py", "_version.py", "board.py", "evaluate.py", "see.py",
+    "search.py", "score.py", "repetition.py", "gibo.py", "book.py", "mcts.py",
     "nn_encode.py",
 ]
 
