@@ -23,8 +23,9 @@ import threading
 
 from flask import Flask, jsonify, request, render_template, send_from_directory
 
+from janggi import __version__
 from janggi.board import Board, Move, HAN, CHO, FORMATIONS, ROWS, COLS
-from janggi.search import Engine, zobrist_hash
+from janggi.search import Engine, zobrist_hash, _HAVE_CORE
 from janggi.score import judge, SCORE_POINTS, HAN_BONUS
 from janggi.repetition import RepetitionTracker
 from janggi.book import load_book, book_move
@@ -148,12 +149,22 @@ def _parse_history(history) -> list[dict]:
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", version=__version__)
 
 
 @app.route("/health")
 def health():
-    return jsonify({"status": "ok"})
+    """Liveness probe, and the fastest way to tell which build is deployed.
+
+    ``accel`` matters as much as ``version``: the Cython extensions are built at
+    deploy time and the app starts on the pure-Python fallback if that fails, so
+    a deployment can be the right version and still be an order of magnitude
+    slower without anything having gone visibly wrong."""
+    return jsonify({
+        "status": "ok",
+        "version": __version__,
+        "accel": _HAVE_CORE,
+    })
 
 
 # The board UI is installable to a phone home screen. These have to be served

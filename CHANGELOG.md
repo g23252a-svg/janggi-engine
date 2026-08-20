@@ -1,6 +1,103 @@
 # Changelog
 
-## Unreleased — phone patch
+Versions before 0.4.0 predate this file; `setup.py` sat at 0.3.0 through all
+three of the patches below, which is what 1.0.0's versioning work is about.
+
+## 1.0.0 — versioned, and one search change that survived measurement
+
+Against the engine deployed before it (`2394b38`), both compiled, over 60
+colour-swapped games from seeded openings at an equal 60k nodes per move:
+
+```
++39 =0 -21 of 60   65.0%   (95% CI 52.9%..77.1%)   +108 elo
+```
+
+### Measured, not assumed
+
+Three search changes were written. **One shipped.** Each was tested alone
+against no change at all, 40 colour-swapped games at an equal 60k nodes:
+
+| change | alone vs nothing | verdict |
+| --- | ---: | --- |
+| history-scaled late move reductions (`histlmr`) | 29-11 of 40, 72.5%; and **+39 =0 -21 of 60, 65.0%, +108 elo** against the deployed engine | **shipped** |
+| the `improving` signal | 24-16 of 40, 60.0%, +70 elo (CI 44.8..75.2) | dropped |
+| eval-scaled null-move reduction (`nmpscale`) | 19-21 of 40, 47.5%, -17 elo | dropped |
+
+The first attempt bundled all three and scored 73.3% of 60 against none, which
+looked like a clean win. It was not one: removing any *single* member was
+neutral, so the three were redundant substitutes rather than three additive
+gains, and the bundle's number said nothing about which to keep. Testing each
+alone is what separated them.
+
+`improving` is the instructive one. It cut a depth-12 opening search from 2.8M
+nodes to 1.4M — and was worth nothing. Measured directly on top of the change
+that does work it scored exactly 50.0% (20-20 of 40). Searching half the nodes
+is also what pruning away good moves looks like, which is the entire reason
+this repository measures instead of trusting a node count.
+
+### Tried and reverted: turning null-move pruning off
+
+It looked inevitable. NMP has now been measured three times — 48.3% of 60,
+57.5% of 40, 45.0% of 60 — and never once distinguished from noise. And it has
+a concrete failure: in a real game (below) it hid a forced mate, so the engine
+recommended the move that lost, and still did at 10 seconds. Disabling it alone
+found the right move; disabling LMR, futility or LMP did not.
+
+The end-to-end test said no. Against the deployed engine, over the **same 60
+openings**:
+
+| shipping candidate | vs deployed main | verdict |
+| --- | ---: | --- |
+| history-scaled LMR, NMP **on** | +39 =0 -21, **65.0%**, +108 elo (CI 52.9..77.1) | **stronger** |
+| history-scaled LMR, NMP **off** | +30 =0 -30, 50.0%, -0 elo (CI 37.3..62.7) | noise |
+
+Removing NMP gives back precisely what the new reductions win. So it stays on —
+on the strength of a direct comparison against the thing being replaced, not
+because the per-feature numbers flattered it. They did not.
+
+This is the second time in this one release that per-feature scores pointed
+somewhere the end-to-end comparison refused to go. A feature measured against
+a variant of itself tells you about that pair; only running the candidate
+against what is actually deployed tells you whether to ship it.
+
+The mate remains a real defect, held by `tests/test_regression_games.py`. It no
+longer fires because the new reductions reach the refutation a ply sooner, not
+because the cause was fixed. `R = 3 + depth/5` has never been tuned; that is
+the open work.
+
+### Added
+
+- **History-scaled late move reductions.** A quiet move that has been causing
+  beta cutoffs all over the current search is not a "late" move in any real
+  sense — the ordering simply has not caught up with it — so it is searched
+  closer to full depth, while a move that has never done anything is pushed
+  further down. Worth +168 elo alone, and it barely changes the node count: it
+  reallocates depth rather than saving work.
+
+  The threshold is measured against the **largest history value seen this
+  search**, not a constant. `histh` is cleared once per search and grows without
+  bound (`+= depth*depth`), so a fixed cutoff means one thing in the first
+  iteration and another in the twelfth, and something else again at a different
+  time limit. A first version used the constant 4000 and scored 67.5% — but a
+  heuristic whose meaning drifts inside a single search is the same fault that
+  already caused a real bug here (the evaluator's endgame score-lock, 0.4.0), so
+  it was rebuilt on the running maximum rather than shipped on a good number.
+  The principled version measures better: 72.5% against the same opponent. Move
+  ordering still reads raw `histh`, so reductions changed and ordering did not —
+  moving both at once would have made this uninterpretable.
+
+- **A version, in one place.** `janggi/_version.py` is the single source;
+  `setup.py`, `python -m janggi.cli --version`, `GET /health` and the board UI
+  all read it, and a test pins that they agree. Previously the only version in
+  the repository was `setup.py`'s `0.3.0`, and it stayed 0.3.0 through three
+  patches that each changed how the engine plays — a version nobody updates is
+  worse than no version, because it tells you the build is something it is not.
+- `GET /health` also reports `accel`, i.e. whether the compiled core actually
+  loaded. Deployments build the extensions and start on the pure-Python
+  fallback if that fails, so a deployment can be the right version and still be
+  an order of magnitude slower with nothing visibly wrong.
+
+## 0.6.0 — phone patch
 
 The board UI was a desktop page that a phone happened to be able to open. It is
 now a phone page: installable to the home screen, sized to the screen it is on,
@@ -52,7 +149,7 @@ control is under 44px.
   misses the board.
 
 
-## Previous — strength patch
+## 0.5.0 — strength patch
 
 Against the engine deployed before it (`d6686b8`), both compiled, at an equal
 0.5 s per move over colour-swapped seeded openings:
@@ -120,7 +217,7 @@ Against the engine deployed before it (`d6686b8`), both compiled, at an equal
   ordering quality is worth more than the calls it saves.
 
 
-## Earlier — large improvement patch
+## 0.4.0 — large improvement patch
 
 Measured against the previous engine (commit `9b5a7c3`), both compiled, at an
 equal 0.5 s per move over 15 seeded openings played twice with colours swapped:

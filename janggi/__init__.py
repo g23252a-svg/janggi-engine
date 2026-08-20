@@ -1,5 +1,6 @@
 """Janggi engine package."""
 
+from ._version import __version__, VERSION_INFO
 from .board import Board, Move, HAN, CHO, FORMATIONS
 from .evaluate import evaluate
 from .search import Engine, SearchOptions, zobrist_hash
@@ -9,6 +10,8 @@ from .book import build_book, load_book, book_move
 from .mcts import NeuralMCTS
 
 __all__ = [
+    "__version__",
+    "VERSION_INFO",
     "Board",
     "Move",
     "HAN",

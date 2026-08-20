@@ -18,10 +18,16 @@ against live human opponents on online services.
   enough to show the rest are worse.
 - **Transposition table** with Zobrist hashing, depth-preferred replacement,
   and mate scores rebased onto the probing ply.
-- **Null-move pruning.** Passing is a legal option in Janggi, so the usual
-  chess worry about zugzwang does not apply the same way here.
+- **Null-move pruning.** Passing is legal in Janggi, so the usual zugzwang
+  worry does not apply. Three measurements over 160 games have never
+  distinguished it from noise, and it can hide a mate — but removing it costs
+  exactly what the history-scaled reductions win (65.0% vs 50.0% against the
+  same opponent over the same openings), so it stays on. Its formula
+  `R = 3 + depth/5` has never been tuned; that is the open work.
 - **Futility, reverse futility and late-move pruning**, plus late move
-  reductions from a depth × move-index table.
+  reductions from a depth × move-index table, scaled by how often the move has
+  caused a cutoff in this search — measured against the running maximum, not a
+  constant, so the test means the same thing at every depth and time limit.
 - **Quiescence search** with SEE and delta pruning: keeps resolving captures
   until the position is quiet, so a shallow search cannot misread the middle of
   an exchange.
@@ -53,6 +59,20 @@ starting formations are selectable for each side: 마상상마, 상마상마, �
 Note on 빅장: facing generals is treated as a legal position, not as check and
 not as an illegal move. `Board.generals_face()` detects it for callers that
 want to apply a draw rule.
+
+## Version
+
+```bash
+python -m janggi.cli --version     # janggi-engine 1.0.0 (compiled core)
+curl <deployment>/health           # {"status":"ok","version":"1.0.0","accel":true}
+```
+
+`accel` is the half of the answer that is easy to miss: deployments compile the
+Cython extensions at build time and start on the pure-Python fallback if that
+fails, so a deployment can be the right version and still be two orders of
+magnitude slower with nothing visibly broken. `janggi/_version.py` is the single
+source of truth — `setup.py`, the CLI, the API and the board UI all read it, and
+a test pins that they agree.
 
 ## Install
 
@@ -117,25 +137,35 @@ colour-swapped pairs from seeded openings, and reports a score with a
 confidence interval:
 
 ```bash
-# does null-move pruning actually help, at an equal node budget?
-python -m janggi.match --games 100 --nodes 150000 --a "" --b "nmp=0"
+# is null-move pruning worth turning back on, at an equal node budget?
+python -m janggi.match --games 100 --nodes 150000 --a "nmp=1" --b ""
 
 # more depth for one side
 python -m janggi.match --games 40 --depth-a 10 --depth-b 8
 ```
 
 Every technique can be switched off individually — `tt`, `lmr`, `ext`, `nmp`,
-`pvs`, `fut`, `lmp`, `asp`, `rep`, plus `extbudget=` and `nodes=`. The same
-options are available in code through `SearchOptions`.
+`pvs`, `fut`, `lmp`, `asp`, `rep`, `histlmr`, plus
+`extbudget=` and `nodes=`. The same options are available in code through
+`SearchOptions`.
 
 What that measurement currently says, at an equal 60k nodes per move:
 
 | technique | score with it on | verdict |
 | --- | ---: | --- |
 | the Janggi-aware evaluator (`eval=1` turns it off) | 75.0% of 80 | clearly better, +191 elo |
+| history-scaled late move reductions (`histlmr`) | 72.5% of 40 | clearly better, +168 elo |
 | futility + late-move pruning | 65.0% of 40 | clearly better |
 | late move reductions | 60.0% of 40 | better, not significant at this sample |
-| null-move pruning | 57.5% of 40 | positive, still not significant — untuned |
+| null-move pruning | 48.3% of 60, 57.5% of 40, 45.0% of 60 | never significant in 160 games — kept on only because removing it costs what `histlmr` wins |
+
+Two changes were written for 1.0.0 and **not** kept, which is the more useful
+half of the table. An `improving` signal (prune harder when the side to move is
+worse off than two plies ago) cut a depth-12 search from 2.8M nodes to 1.4M and
+was worth exactly nothing — 20-20 of 40 measured directly against the change
+that does work. Halving the node count is also what pruning away good moves
+looks like. Scaling the null-move reduction by the evaluation margin scored
+19-21 of 40 and went the same way.
 
 A position and its mirror image must score exactly opposite. That test is in
 `tests/test_parity.py`, and it earned its place immediately: the cannon-screen

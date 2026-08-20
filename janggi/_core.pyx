@@ -1139,6 +1139,7 @@ cdef int killer2[MAXPLY]
 cdef int histh[2 * 8100]
 cdef int counterm[2 * 8100]         # counter-move: [side][previous move] -> reply
 
+
 # Mate scores are MATE - ply, so anything past this bound is a forced mate.
 cdef int MATE_BOUND = MATE - 4096
 
@@ -1165,6 +1166,11 @@ cdef int g_use_lmp = 1
 cdef int g_use_asp = 1
 cdef int g_use_rep = 1
 cdef int g_eval_ver = 2      # 1 = original evaluator, 2 = the Janggi-aware one
+cdef int g_use_hist_lmr = 1  # scale the late-move reduction by move history
+# Largest history value seen this search, so the LMR test above can ask "is this
+# move in the top quarter of what we have seen" instead of comparing against a
+# constant that drifts in meaning as histh accumulates.
+cdef int g_hist_max = 0
 
 # Repetition: hashes along the current search line plus the hashes of game
 # positions since the last capture, which Python supplies.
@@ -1347,6 +1353,7 @@ cdef int _qsearch(int* piece, int* side, int who, int alpha, int beta, int ply):
 
 cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta,
                   int ply, int is_pv, int can_null):
+    global g_hist_max
     global g_nodes, g_tthits, g_ext
     g_nodes += 1
     if _time_up():
@@ -1413,6 +1420,9 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
         if (g_use_nmp and not is_pv and can_null and depth >= 3
                 and static_eval >= beta and beta < MATE_BOUND
                 and _has_null_material(piece, side, who)):
+            # Scaling R by how far above beta the position stands was tried and
+            # removed: 19-21 of 40 alone against no change at all, i.e. a
+            # slightly negative trend and no evidence either way.
             R = 3 + depth / 5
             if R > depth - 1:
                 R = depth - 1
@@ -1504,7 +1514,7 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
 
     cdef int best_score = -MATE * 2
     cdef int best_move = -1
-    cdef int reduce, gives_check, new_depth, quiets, di, mi
+    cdef int reduce, gives_check, new_depth, quiets, di, mi, hv
     cdef int fut_margin = 0
     cdef int played = 0          # legal moves actually searched at this node
     quiets = 0
@@ -1546,6 +1556,23 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
             reduce = LMRTAB[di][mi]
             if is_pv and reduce > 0:
                 reduce -= 1
+            if g_use_hist_lmr and reduce > 0:
+                # A quiet move that has caused cutoffs all over this search is
+                # not a late move in any meaningful sense -- the ordering just
+                # has not caught up. Search it closer to full depth, and push
+                # the ones with a history of doing nothing further down.
+                #
+                # Measured against the running maximum, NOT against a constant.
+                # histh is only cleared once per search and grows without bound
+                # (+= depth*depth), so a fixed cutoff means something different
+                # in the first iteration than in the twelfth, and something
+                # different again at another time limit. "In the top quarter of
+                # what this search has seen" means the same thing throughout.
+                hv = histh[(who-1)*8100 + mt]
+                if hv == 0:
+                    reduce += 1
+                elif g_hist_max > 0 and hv * 4 >= g_hist_max * 3:
+                    reduce -= 1
             if reduce > new_depth - 1:
                 reduce = new_depth - 1
             if reduce < 0:
@@ -1586,6 +1613,8 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
                     killer2[ply] = killer1[ply]
                     killer1[ply] = mt
                 histh[(who-1)*8100 + mt] += depth * depth
+                if histh[(who-1)*8100 + mt] > g_hist_max:
+                    g_hist_max = histh[(who-1)*8100 + mt]
                 if prev_mt >= 0:
                     counterm[(who-1)*8100 + prev_mt] = mt
             break
@@ -1672,12 +1701,13 @@ cdef void _sort_root():
 def core_reset(int max_depth, int ext_budget, int use_tt=1, int use_lmr=1,
                int use_ext=1, int use_nmp=1, int use_pvs=1, int use_fut=1,
                int use_lmp=1, int use_asp=1, int use_rep=1,
-               long long node_limit=0, int eval_version=2):
+               long long node_limit=0, int eval_version=2,
+               int use_hist_lmr=1):
     """Reset TT / killers / history / stats for a fresh Engine.search()."""
     global g_nodes, g_qnodes, g_tthits, g_timeout, g_ext, g_maxdepth
     global g_use_tt, g_use_lmr, g_use_ext, g_use_nmp, g_use_pvs
     global g_use_fut, g_use_lmp, g_use_asp, g_use_rep, g_node_limit, n_game_hash
-    global g_eval_ver
+    global g_eval_ver, g_use_hist_lmr, g_hist_max
     cdef int i
     for i in range(TT_SIZE):
         tt_flag[i] = -1
@@ -1698,6 +1728,8 @@ def core_reset(int max_depth, int ext_budget, int use_tt=1, int use_lmr=1,
     g_use_lmp = use_lmp; g_use_asp = use_asp; g_use_rep = use_rep
     g_node_limit = node_limit
     g_eval_ver = eval_version
+    g_use_hist_lmr = use_hist_lmr
+    g_hist_max = 0
     n_game_hash = 0
 
 

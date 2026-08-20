@@ -12,6 +12,7 @@ with the real janggi package copied in beside it.
 from __future__ import annotations
 
 import pathlib
+import re
 import shutil
 import sys
 
@@ -31,6 +32,15 @@ PACKAGE_MODULES = [
 INJECT = '<script src="browser-engine.js"></script>\n</head>'
 
 
+def read_version() -> str:
+    """The version, without importing janggi (which would need the extensions)."""
+    src = (ROOT / "janggi" / "_version.py").read_text(encoding="utf-8")
+    match = re.search(r'^__version__ = "([^"]+)"', src, re.M)
+    if not match:
+        raise SystemExit("no __version__ in janggi/_version.py")
+    return match.group(1)
+
+
 def build(out_dir: pathlib.Path) -> None:
     if out_dir.exists():
         shutil.rmtree(out_dir)
@@ -40,6 +50,15 @@ def build(out_dir: pathlib.Path) -> None:
     if "</head>" not in html:
         raise SystemExit("templates/index.html has no </head> to inject into")
     html = html.replace("</head>", INJECT, 1)
+    # Flask renders the template through Jinja; Pages serves the file as-is, so
+    # anything Jinja would have substituted has to be substituted here or it
+    # ships as literal braces on the page.
+    html = html.replace("{{ version or '' }}", read_version())
+    if "{{" in html or "{%" in html:
+        raise SystemExit(
+            "templates/index.html has Jinja syntax the Pages build does not "
+            "substitute; add it to build() or the braces ship to the page"
+        )
     (out_dir / "index.html").write_text(html, encoding="utf-8")
 
     shutil.copy2(WEB / "browser-engine.js", out_dir / "browser-engine.js")

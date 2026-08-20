@@ -73,6 +73,16 @@ def test_build_ships_every_asset_the_page_references(site):
         assert (site / ref).exists(), f"index.html references {ref}, build omits it"
 
 
+def test_the_published_page_shows_the_version_not_a_jinja_placeholder(site):
+    """Flask renders this template through Jinja; Pages serves it as a file. A
+    placeholder the build forgets to substitute ships as literal braces."""
+    from janggi import __version__
+
+    html = (site / "index.html").read_text(encoding="utf-8")
+    assert "{{" not in html and "{%" not in html, "un-substituted Jinja reached the page"
+    assert __version__ in html
+
+
 def test_build_ships_the_icons_the_manifest_declares(site):
     manifest = json.loads((site / "manifest.webmanifest").read_text(encoding="utf-8"))
     assert manifest["icons"], "an installable app needs at least one icon"

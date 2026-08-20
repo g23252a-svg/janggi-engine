@@ -17,10 +17,11 @@ from __future__ import annotations
 import argparse
 import time
 
+from ._version import __version__
 from .board import Board, Move, HAN, CHO, FORMATIONS
 from .repetition import RepetitionTracker
 from .score import judge
-from .search import Engine, SearchOptions
+from .search import Engine, SearchOptions, _HAVE_CORE
 
 PIECE_KO = {"K": "궁", "C": "차", "P": "포", "M": "마", "S": "상", "G": "사", "J": "졸"}
 
@@ -150,6 +151,11 @@ def _perft(board: Board, side: int, depth: int) -> int:
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Janggi engine")
+    # Reports whether the compiled core is live as well as the version: the two
+    # together are what determines how strong this install actually plays.
+    p.add_argument("--version", action="version",
+                   version=f"janggi-engine {__version__} "
+                           f"({'compiled core' if _HAVE_CORE else 'pure Python'})")
     p.add_argument("--analyze", choices=["cho", "han"], help="analyze the opening for a side")
     p.add_argument("--selfplay", action="store_true", help="run an engine vs engine game")
     p.add_argument("--bench", action="store_true", help="run the standard benchmark")
