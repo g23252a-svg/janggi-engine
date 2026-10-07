@@ -14,10 +14,23 @@ Every row below is a colour-swapped match at an equal 60k nodes per move,
 | change | alone vs 1.0.0 | verdict |
 | --- | ---: | --- |
 | `histmalus` — bounded signed history (gravity + malus) | +33 =0 -27 of 60, 55.0%, +35 elo (CI 42.4..67.6) | not distinguishable from noise — **off by default**, code and flag kept |
+| `mthreat` — a null-move fail-low with a mate score extends and disables margin pruning | +30 =0 -30 of 60, **50.0%**, 0 elo (CI 37.3..62.7) | **ships** — a defect fix at zero measured cost |
 
 `histmalus` is the principled fix for the finding in the 1.0.0 correction below
 (the history "rescue" branch never fired because the running max was
 unreachable). It is more correct and it measures the same as the flaw it fixes.
+`mthreat` is judged by a different rule, because it is not a strength change
+but the fix for the lost game in `tests/test_regression_games.py`. At the UI's
+budget it holds the position the deployed engine loses; its cost is what the
+match measures, and that cost is nothing — three shards of exactly 10-10. A
+null-move search that fails low with a mate score means "we passed and got
+mated"; passing is a legal move in Janggi, so that is a literal threat on the
+board. The node extends one ply (outside the check-extension budget) and does
+not margin-prune its quiet moves. 289 such fail-lows were being ignored in one
+search of that position. Its default flips to on in the release commit, so
+that `""` keeps meaning "the deployed engine" for every other match in this
+campaign.
+
 Three shards of 11-9 each. By this repository's own precedent — `improving`
 at 60.0% and null-move-off at 55.0% both went the same way — it does not ship
 on that number.
