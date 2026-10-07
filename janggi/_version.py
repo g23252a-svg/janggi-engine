@@ -6,7 +6,7 @@ unversioned build is three places claiming different versions. A test pins that
 agreement.
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 #: (major, minor, patch), for callers that want to compare rather than print.
 VERSION_INFO = tuple(int(part) for part in __version__.split("."))

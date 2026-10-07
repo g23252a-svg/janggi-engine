@@ -3,6 +3,155 @@
 Versions before 0.4.0 predate this file; `setup.py` sat at 0.3.0 through all
 three of the patches below, which is what 1.0.0's versioning work is about.
 
+## 1.1.0 — the lost game, fixed by proof
+
+A user played a game through the web UI following the engine's own
+recommendations and lost it. The release is that game, fixed by proof, and
+the measurement discipline it took to ship nothing else.
+
+### What ships
+
+**rootguard.** At the end of an interrupted iteration the engine used to keep
+the previous depth's best move unless the partial pass had found a *better*
+one. If the partial pass had re-searched that move and proven it **lost by
+force**, the proof was thrown away and the move was played — that is how it
+walked into a 15-ply mate at the UI's budget while two moves held. Now a root
+move that the current depth has proven lost is never played; the best move
+that is not a proven loss is. Under the aspiration window, though, that
+proof is usually only a *bound*: the PV move fails low against the window's
+floor, and what the clock cuts off is the wider pass that would say what the
+fail-low means. Three forms of the guard tried to answer that inside the
+budget, and each paid on every move for a guard that fires on few: an exact
+re-search on every fail-low (46.7% at 60k, 40% at 300k, stopped), the same
+only late in the budget, and 8% of every search held back for one
+verification (45.0% at 60k; 57.1% of 42 at 300k, stopped). What ships pays
+only on the move it fires on, in time: when the clock runs out with the PV
+move's fail-low unresolved — the previous best is suspect and nothing has
+replaced it — the search may carry on up to double its budget, once, to
+finish resolving that depth, and then stops. It is what a time manager is
+for. On the lost game's position it plays 차 (2,1)->(8,1), the most
+resistant move, from 700k nodes up, finishing the depth at about 1.25M
+nodes whatever the budget; at the UI's 3.5 s that one move takes 4.5 s
+and holds, where deployed plays the mate. A move can take up to twice its
+tier's time when this fires — 11 s at most on the 6-second tier, inside
+the 30-second byo-yomi the app is used with. The proven-loss rule stays as
+the last resort if the extended search runs out as well. A first form that
+let the extended search run on into the next depth measured 55.0% at 60k
+but used 19% more nodes per move over the match: the extension fires on
+about a quarter of moves, and most of what it bought was being spent past
+the depth it was granted for. A depth-limited search
+never runs out of time and is node-identical to deployed (2,822,961 nodes
+at depth 12 from the opening); CHO still proves the mate in 205,998 nodes.
+Measured against the deployed engine, with the nodes each side really
+used, because a search allowed to overrun its budget is only honest in a
+node-limited match when the summary shows it: 51.7% of 60 at 60k and **60.0% of 60 at 300k**, using 10% and 9% more nodes per move (it thinks longer only when its move has just failed).
+
+**Measurement that survives the box.** The container running matches is
+reclaimed between sessions; two 60-game runs died mid-way with nothing to show
+before `--log` / `--resume` / `--pool` existed. Every game is one JSON line
+with its opening seed, colours, result, ending reason and budget; a killed run
+resumes from the last finished game; shards with disjoint seed ranges pool
+into one summary. A log from a different configuration refuses to resume.
+
+**Intervals computed with the right unit.** The two games of a colour-swapped
+pair share an opening, so they are not independent trials, and every interval
+this repository had printed was too narrow. `summarize()` now reports the
+interval over pairs (sample variance, at least two pairs, no verdict under 20
+games). It paid for itself at once: a flag that had measured "50.0%, not
+distinguishable" turned out to have played the identical game in every pair —
+the pair interval is zero-width, the per-game one said 34..66.
+
+**A prover sweep that can fail.** The mate-in-1/2 sweep in `test_tactics.py`
+passes every flag in milliseconds, including one that demonstrably hides a
+mate. The sweep that catches that is the 15-ply proof from the lost game,
+under every configuration that could ship, with a 2× node margin. And the
+exact deployed 1.0.0 search is pinned, flag by flag, at 2,822,961 nodes:
+every A/B in this campaign used `""` to mean that engine.
+
+### What was tried and did not ship
+
+Eight search and evaluation changes were written, each behind a flag, each
+default-off and node-identical when off, each measured alone against the
+deployed engine. One ships. The rest are in the table below with the number
+that decided them; the code and flags stay so the next attempt starts from a
+measurement rather than a memory.
+
+Two of them were recorded as shipping before being reversed, and both
+reversals are worth more than the changes:
+
+- `mthreat=1` was "a defect fix at zero cost" on 30-30 of 60. The design
+  review then measured the half of the contract the verdict had not: after the
+  fatal move the attacker must prove the mate, and with the flag on it scores
+  +2072 instead. The 30-30 was also no evidence — 17 of 30 pairs were the same
+  game. And the mechanism could never have worked: the threat is detected only
+  when the static eval is at or above beta, futility prunes only below alpha.
+- `asp=0 + rootguard=1 (+ extbudget=4)` fixed the lost game by proof and
+  scored 60% at 60k. At 300k, the regime the defect lives in, the pair scored
+  43% and the bundle 45%, and the leave-one-out showed the window was the
+  drag: turning aspiration off is worth more the deeper the search goes, and
+  the UI searches deeper still. Keeping the window and making the guard
+  reachable under it is what ships instead.
+
+Every row below is a colour-swapped match at an equal node budget per move,
+60 games over three 20-game shards with disjoint opening seeds, pooled with
+`python -m janggi.match --pool` and reported with the pair-aware interval.
+
+### Measured, not assumed
+
+| change | alone vs 1.0.0 | verdict |
+| --- | ---: | --- |
+| `histmalus` — bounded signed history (gravity + malus) | 60 games: +33 =0 -27, 55.0%; extended once, as pre-declared, to **120 games: +67 =0 -53, 55.8%, +41 elo (pairs CI 47.5..64.2)** | not distinguishable at 120 — **off by default**, code and flag kept |
+| **`rootguard=4`** — the fail-low extension: up to double the budget, once, when the clock runs out on an unresolved PV fail-low — vs deployed, **60k** | +31 =0 -29 of 60, 51.7%, +12 elo (pairs CI 39.7..63.6); A used **10.3% more nodes per move** (64,527 vs 58,517); the proven-loss rule itself changed 5 of 4,668 moves | not worse — **passes** its rule at 60k |
+| **`rootguard=4`** vs deployed, **300k** — the regime the defect lives in | +36 =0 -24 of 60, 60.0%, +70 elo (pairs CI 49.1..70.9); shards 13-7, 10-10, 13-7; A used **9.1% more nodes per move** (313,138 vs 286,984); the proven-loss rule itself changed 3 of 4,192 moves | not worse — **passes** its rule at 300k; **ships** |
+| `rootguard=4`, first form — the extended search ran on into the next depth — vs deployed, 60k | +33 =0 -27 of 60, 55.0%, +35 elo (pairs CI 44.1..65.9); A used **19.2% more nodes per move** (69,823 vs 58,560) | not distinguishable, and the cost was in the wrong place: it now stops when the depth it bought resolves |
+| `rootguard=3` — hold back 8% of every search, verify the PV move on timeout — vs deployed, 60k | +27 =0 -33 of 60, 45.0%, -35 elo (pairs CI 36.4..53.6); every shard 9-11 | not distinguishable, and the reserve is paid on every move — superseded by mode 4 |
+| `rootguard=3` vs deployed, 300k | +24 =0 -18 of 42, 57.1%, +50 elo (pairs CI 44.9..69.4) | stopped when mode 4 held the position for no per-move cost |
+| `rootguard=1` (window on, exact re-search of the PV move on every fail-low) vs deployed, 60k | +28 =0 -32 of 60, 46.7%, -23 elo (pairs CI 34.3..59.0); 2 of 30 pairs identical | not distinguishable at 60k; at 300k +8 =0 -12 of 20, 40.0%, stopped — the re-search is paid at every depth |
+| **the bundle** `asp=0,rootguard=1,extbudget=4` vs deployed, 60k nodes | +31 =0 -29 of 60, 51.7%, +12 elo (pairs CI 37.4..65.9) | not worse at 60k — **passes** its rule; 300k pending |
+| **the bundle** vs deployed, **300k** nodes — the regime the defect lives in | +27 =0 -33 of 60, 45.0%, -35 elo (pairs CI 32.3..57.7) | not distinguishable, but below its best member at both budgets — the plan's leave-one-out rule fires: the pair without `extbudget=4` is measured at 300k |
+| the pair `asp=0,rootguard=1` vs deployed, **300k** (leave-one-out) | +26 =0 -34 of 60, 43.3%, -47 elo (pairs CI 32.1..54.6) | same as the bundle: `extbudget=4` was not the drag, **`asp=0` is** — 60% at 60k, 43% at 300k; the window is worth more the deeper the search. Neither ships. Contingency: keep the window and make rootguard reachable under it |
+| `asp=0,rootguard=1` — no aspiration window, and never play a root move the current depth has proven lost | +36 =0 -24 of 60, 60.0%, +70 elo (pairs CI 46.6..73.4) | not distinguishable alone — judged as part of the defect-fix bundle below |
+| `extbudget=4` — one more check extension per path | +31 =0 -29 of 60, 51.7% (pairs CI 44.4..58.9); 9 of 23 pairs the same game; at **300k** +13 =0 -20 of 33, 39.4%, stopped | inert at 60k and trending below at 300k — **off**, flag kept |
+| `mob=2` — coverage mobility in the compiled evaluator | +36 =0 -24 of 60, 60.0%, +70 elo (pairs CI 49.3..70.7) | not distinguishable, and it costs 11.5% nps that a node-limited match cannot see — **off**, flag kept |
+| `lmrcap` — reduce SEE-negative captures like late quiets | +10 =0 -13 of 23, 43.5% — stopped early | **off**: palace sacrifices are SEE-negative captures by definition |
+| `soltab=1` — soldier advancement by a per-row table instead of linear to the back rank | +34 =0 -26 of 60, 56.7%, +47 elo (pairs CI 43.8..69.5) | not distinguishable — **off**, flag kept |
+| `soltab=1`, second strike | the 300k proof sweep: CHO scores **+2888 instead of mate** with it on — re-valuing the soldiers in the mating net hides the proof | **off**; listed in `HIDES_THE_PROOF` so it cannot ship until the proof survives it |
+| `mthreat=2` — the pruning gate alone, on top of the bundle, at **300k** nodes | +20 =0 -20 of 40, 50.0%, pairs CI **50.0..50.0** — every pair 1-1: A and B played the identical game | **inert** — off, flag kept; the pair interval sees this, the per-game one (34.5..65.5) could not |
+| `mthreat=1` — a null-move fail-low with a mate score extends and disables margin pruning | +30 =0 -30 of 60, 50.0% — but 17 of 30 pairs were the **same game** (inert at 60k) | **does not ship**: it hides the CHO-side mate proof (see below) |
+
+`histmalus` is the principled fix for the finding in the 1.0.0 correction below
+(the history "rescue" branch never fired because the running max was
+unreachable). It is more correct and it measures the same as the flaw it fixes.
+`mthreat=1` was recorded here as shipping on that 30-30, and that was wrong
+twice over. First, the match could not have said anything: at 60k nodes the
+null-move search almost never fails low with a mate score, so in 17 of the 30
+colour-swapped pairs A and B played the identical game. Second, and decisive,
+the design review checked the half of the regression contract the verdict
+had not: once the fatal move is on the board, CHO must prove the mate.
+Deployed does, in 206k nodes. With `mthreat=1` CHO scores +2072 at 300k
+nodes and never proves it — the extension it adds on the defending side
+grows the attacker's tree past the budget. Flipping it on would have turned
+`test_the_mate_after_the_fatal_move_is_seen_quickly` red. It stays off. A
+gate-only form (`mthreat=2`: no extension, only the pruning gate) kept the
+proof and measured inert — and the pre-release review found why neither
+mode could ever have worked: the threat is detected inside the null-move
+block, which runs only when the static eval is **at or above beta**, while
+futility prunes only when it is **below alpha**. Those are mutually
+exclusive at one node, so the "gate futility" half was unreachable by
+construction and the flag only ever gated late-move pruning at depth 3–4.
+The idea — do not margin-prune under a mate threat — was never actually
+tested here, and the 50.0% results must not be read as testing it. A real
+version has to look for the threat where the pruning happens, below alpha.
+
+Six shards: 11-9, 11-9, 11-9, 10-10, 11-9, 13-7. The extension to 120 games
+was declared in advance with its rule -- ship only if the pooled pair-aware
+interval excludes 50% -- and it does not (lower bound 47.5%). No further
+extension: a point estimate that will not move off 55% in 120 games is a
++40-elo change at best, and chasing it with more games is how a repository
+ends up shipping noise. By this repository's own precedent — `improving`
+at 60.0% and null-move-off at 55.0% both went the same way — it does not ship
+on that number.
+
 ## 1.0.0 — versioned, and one search change that survived measurement
 
 Against the engine deployed before it (`2394b38`), both compiled, over 60
@@ -85,6 +234,16 @@ the open work.
   The principled version measures better: 72.5% against the same opponent. Move
   ordering still reads raw `histh`, so reductions changed and ordering did not —
   moving both at once would have made this uninterpretable.
+
+  **Correction (found while preparing 1.1.0):** only one of the two halves above
+  does anything. Counters on this exact build, depth-12 searches of three
+  positions, show the "+1 on zero history" branch firing on 33–42% of eligible
+  quiet moves and the "top quarter of the running max → −1" branch on
+  **0.2–0.3%**. The running max is a handful of moves with hundreds of cutoffs,
+  and three quarters of that is out of reach for everything else. The +108 elo
+  is real and comes from reducing never-cut quiets one ply more; the "rescue"
+  half was never operative. The measurement stands; the description above was
+  wrong about why.
 
 - **A version, in one place.** `janggi/_version.py` is the single source;
   `setup.py`, `python -m janggi.cli --version`, `GET /health` and the board UI

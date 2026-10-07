@@ -33,7 +33,7 @@ try:
     from .board import DISABLE_ACCEL as _NO_ACCEL
     if _NO_ACCEL:
         raise ImportError("accelerators disabled by JANGGI_NO_ACCEL")
-    from janggi._core import core_reset, core_negamax, core_search, core_stats
+    from janggi._core import core_reset, core_negamax, core_search, core_stats, core_guard_stats
     _HAVE_CORE = True
 except Exception:
     _HAVE_CORE = False
@@ -79,6 +79,9 @@ class SearchStats:
     #: Principal variation as (fr, fc, tr, tc) tuples, best line first.
     pv: list[tuple[int, int, int, int]] = field(default_factory=list)
     elapsed: float = 0.0
+    #: rootguard: verification searches run, and moves the guard changed.
+    guard_verified: int = 0
+    guard_fired: int = 0
 
     @property
     def total_nodes(self) -> int:
@@ -94,8 +97,10 @@ class SearchOptions:
 
     They exist as flags so a change can be measured against the same engine with
     the feature toggled (``python -m janggi.match --a "" --b "histlmr=0"``)
-    instead of against a guess. All are on by default except ``use_nmp``, which
-    earned its way off -- see below.
+    instead of against a guess. Every 1.0.0 technique is on by default
+    (``use_nmp`` included: it was measured off and came back, see below).
+    Of the flags added in 1.1.0 only ``root_guard_mode`` earned its place;
+    the rest stay off with their measurements in CHANGELOG.md.
     """
 
     use_tt: bool = True             # transposition table
@@ -119,6 +124,29 @@ class SearchOptions:
     node_limit: int = 0             # 0 = unlimited; used for reproducible A/B
     eval_version: int = 2           # 1 = original evaluator, 2 = Janggi-aware
     use_hist_lmr: bool = True       # scale the late-move reduction by move history
+    use_hist_malus: bool = False    # bounded signed history: gravity + malus for failed quiets
+    # rootguard: never play a root move the current depth has proven lost.
+    # 0 off; 1 exact re-search of the PV move on every fail-low; 2 the same
+    # only past 70% of the budget; 3 hold back 8% of the budget and verify
+    # the PV move on timeout; 4 the fail-low extension: when the clock runs
+    # out with the PV move's fail-low unresolved, allow up to double the
+    # budget once and carry on. Modes 1-3 measured
+    # 40-47% against 1.0.0 (CHANGELOG): each pays on every move for a guard
+    # that fires on few. Mode 4 pays only on the moves it fires on, in time.
+    root_guard_mode: int = 4
+    # mate_threat_mode never did what its name says. The threat is detected in
+    # the null-move block, which runs only when static_eval >= beta; futility
+    # prunes only when static_eval + margin <= alpha < beta. The two cannot be
+    # true at the same node, so the 'gate futility' half is unreachable and
+    # the flag only ever gates late-move pruning at depth 3-4. That is why it
+    # measured inert (identical games in every pair). A real mate-threat
+    # defence has to probe for the threat where pruning happens, i.e. below
+    # alpha -- a different design, not this release. Found by review.
+    mate_threat_mode: int = 0       # 0 off; 1 extend + gate (hides proofs); 2 gate only (unreachable, see above)
+    use_chk_prune: bool = False     # never futility/LMP-prune a move that gives check
+    use_lmr_cap: bool = False       # reduce losing captures too (one ply less than quiets)
+    soldier_table: int = 0          # 0 = linear advancement bonus, 1 = per-row table
+    mobility_weight: int = 0        # centipawns per covered square; 0 = off
 
     _ALIASES = {
         "tt": "use_tt", "lmr": "use_lmr", "ext": "use_ext", "nmp": "use_nmp",
@@ -128,6 +156,9 @@ class SearchOptions:
         "extbudget": "ext_budget", "nodes": "node_limit",
         "eval": "eval_version",
         "histlmr": "use_hist_lmr",
+        "histmalus": "use_hist_malus",
+        "rootguard": "root_guard_mode", "mthreat": "mate_threat_mode", "chkprune": "use_chk_prune",
+        "lmrcap": "use_lmr_cap", "soltab": "soldier_table", "mob": "mobility_weight",
     }
 
     @classmethod
@@ -145,7 +176,7 @@ class SearchOptions:
             field_name = cls._ALIASES.get(key, key)
             if field_name not in cls.__dataclass_fields__:
                 raise ValueError(f"unknown search option {key!r}")
-            if field_name in ("ext_budget", "node_limit", "eval_version"):
+            if field_name in ("ext_budget", "node_limit", "eval_version", "soldier_table", "mobility_weight", "mate_threat_mode", "root_guard_mode"):
                 values[field_name] = int(raw)
             else:
                 values[field_name] = raw.strip() not in ("0", "false", "False", "no")
@@ -275,6 +306,13 @@ class Engine:
             opts.node_limit,
             opts.eval_version,
             1 if opts.use_hist_lmr else 0,
+            1 if opts.use_hist_malus else 0,
+            opts.root_guard_mode,
+            opts.mate_threat_mode,
+            1 if opts.use_chk_prune else 0,
+            1 if opts.use_lmr_cap else 0,
+            opts.soldier_table,
+            opts.mobility_weight,
         )
         deadline = (time.time() + self.time_limit) if self.time_limit else 0.0
         frm, to, cap, score, depth, pv = core_search(
@@ -288,6 +326,7 @@ class Engine:
         self.stats.nodes = cn
         self.stats.qnodes = cq
         self.stats.tt_hits = ct
+        self.stats.guard_verified, self.stats.guard_fired = core_guard_stats()
         self.stats.depth_reached = depth
         self.stats.pv = [
             (f // COLS, f % COLS, t // COLS, t % COLS) for f, t in pv

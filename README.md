@@ -13,7 +13,15 @@ against live human opponents on online services.
 - **Alpha-beta negamax with iterative deepening**, so there is always a move
   ready and each pass orders the next one.
 - **Aspiration windows** around the previous iteration's score, widening on
-  failure.
+  failure. Turning them off was measured in 1.1.0 and costs strength exactly
+  where it matters: 60% at 60k nodes, 43% at 300k.
+- **Finish finding out when the best move has just failed.** When the clock
+  interrupts an iteration in which the previous best move has just failed low
+  and nothing has replaced it, the search may carry on up to double its
+  budget, once, instead of playing a move it has just found reason to doubt;
+  and a root move the current depth has proven lost by force is never played.
+  This is how a real game was lost (see `tests/test_regression_games.py`). A
+  depth-limited search never runs out of time and is node-identical to 1.0.0.
 - **Principal variation search** — after the first move, a null window is
   enough to show the rest are worse.
 - **Transposition table** with Zobrist hashing, depth-preferred replacement,
@@ -25,9 +33,11 @@ against live human opponents on online services.
   same opponent over the same openings), so it stays on. Its formula
   `R = 3 + depth/5` has never been tuned; that is the open work.
 - **Futility, reverse futility and late-move pruning**, plus late move
-  reductions from a depth × move-index table, scaled by how often the move has
-  caused a cutoff in this search — measured against the running maximum, not a
-  constant, so the test means the same thing at every depth and time limit.
+  reductions from a depth × move-index table, with one extra ply of reduction
+  for a quiet move that has never caused a cutoff in this search. (The release
+  that added this also described a "reduce less for the best-scoring quiets"
+  half; counters showed it firing on 0.2–0.3% of moves. The gain is from the
+  first half alone — see CHANGELOG 1.0.0.)
 - **Quiescence search** with SEE and delta pruning: keeps resolving captures
   until the position is quiet, so a shallow search cannot misread the middle of
   an exchange.
@@ -142,7 +152,20 @@ python -m janggi.match --games 100 --nodes 150000 --a "nmp=1" --b ""
 
 # more depth for one side
 python -m janggi.match --games 40 --depth-a 10 --depth-b 8
+
+# a 60-game match as three shards with disjoint openings, each resumable if
+# the machine is reclaimed mid-run, then one pooled summary
+for s in 20260812 20260822 20260832; do
+  python -m janggi.match --games 20 --nodes 60000 --seed $s --a "histmalus=1" --b "" \
+      --log runs/histmalus_$s.jsonl --resume &
+done; wait
+python -m janggi.match --pool runs/histmalus_*.jsonl
 ```
+
+The two games of a colour-swapped pair share an opening and are not
+independent trials, so the interval is computed over pairs. A result with
+every pair 1-1 has a zero-width interval — which is how you find out that A
+and B played the identical game, and that the flag under test did nothing.
 
 Every technique can be switched off individually — `tt`, `lmr`, `ext`, `nmp`,
 `pvs`, `fut`, `lmp`, `asp`, `rep`, `histlmr`, plus
@@ -158,6 +181,12 @@ What that measurement currently says, at an equal 60k nodes per move:
 | futility + late-move pruning | 65.0% of 40 | clearly better |
 | late move reductions | 60.0% of 40 | better, not significant at this sample |
 | null-move pruning | 48.3% of 60, 57.5% of 40, 45.0% of 60 | never significant in 160 games — kept on only because removing it costs what `histlmr` wins |
+| `rootguard` (1.1.0, ships) | 51.7% of 60 at 60k and **60.0% of 60 at 300k**, using 10% and 9% more nodes per move (it thinks longer only when its move has just failed) | fixes a real lost game by proof; see CHANGELOG |
+| bounded signed history (`histmalus=1`) | 55.8% of 120 | not distinguishable at 120 — off |
+| mobility in the compiled evaluator (`mob=2`) | 60.0% of 60 | not distinguishable, and costs 11.5% nps a node match cannot see — off |
+| soldier table (`soltab=1`) | 56.7% of 60 | not distinguishable — off |
+| reduce losing captures (`lmrcap=1`) | 43.5% of 23 | stopped: palace sacrifices are SEE-negative captures — off |
+| no aspiration + rootguard (`asp=0,rootguard=1`) | 60.0% at 60k, **43.3% at 300k** | the window is worth more the deeper the search — off |
 
 Two changes were written for 1.0.0 and **not** kept, which is the more useful
 half of the table. An `improving` signal (prune harder when the side to move is
