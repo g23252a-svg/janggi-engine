@@ -2,3 +2,4 @@
 {"seed": 20260812, "a_is_cho": false, "winner": "han", "plies": 200, "reason": "cap", "a": "asp=0,rootguard=1,extbudget=4,mthreat=2", "b": "asp=0,rootguard=1,extbudget=4"}
 {"seed": 20260813, "a_is_cho": true, "winner": "cho", "plies": 97, "reason": "repetition", "a": "asp=0,rootguard=1,extbudget=4,mthreat=2", "b": "asp=0,rootguard=1,extbudget=4"}
 {"seed": 20260813, "a_is_cho": false, "winner": "cho", "plies": 97, "reason": "repetition", "a": "asp=0,rootguard=1,extbudget=4,mthreat=2", "b": "asp=0,rootguard=1,extbudget=4"}
+{"seed": 20260814, "a_is_cho": true, "winner": "han", "plies": 160, "reason": "stalemate", "a": "asp=0,rootguard=1,extbudget=4,mthreat=2", "b": "asp=0,rootguard=1,extbudget=4"}
