@@ -13,7 +13,7 @@ Every row below is a colour-swapped match at an equal 60k nodes per move,
 
 | change | alone vs 1.0.0 | verdict |
 | --- | ---: | --- |
-| `histmalus` — bounded signed history (gravity + malus) | +33 =0 -27 of 60, 55.0%, +35 elo (CI 42.4..67.6) | not distinguishable from noise — **off by default**, code and flag kept |
+| `histmalus` — bounded signed history (gravity + malus) | 60 games: +33 =0 -27, 55.0%; extended once, as pre-declared, to **120 games: +67 =0 -53, 55.8%, +41 elo (pairs CI 47.5..64.2)** | not distinguishable at 120 — **off by default**, code and flag kept |
 | `asp=0,rootguard=1` — no aspiration window, and never play a root move the current depth has proven lost | +36 =0 -24 of 60, 60.0%, +70 elo (pairs CI 46.6..73.4) | not distinguishable alone — judged as part of the defect-fix bundle below |
 | `extbudget=4` — one more check extension per path | +31 =0 -29 of 60, 51.7% (pairs CI 44.4..58.9); 9 of 23 pairs the same game | inert at 60k — judged at 300k, where the defect lives |
 | `mob=2` — coverage mobility in the compiled evaluator | +36 =0 -24 of 60, 60.0%, +70 elo (pairs CI 49.3..70.7) | not distinguishable, and it costs 11.5% nps that a node-limited match cannot see — **off**, flag kept |
@@ -37,7 +37,12 @@ grows the attacker's tree past the budget. Flipping it on would have turned
 gate-only form (`mthreat=2`: no extension, only the pruning gate) is being
 tested against that proof before it is measured at all.
 
-Three shards of 11-9 each. By this repository's own precedent — `improving`
+Six shards: 11-9, 11-9, 11-9, 10-10, 11-9, 13-7. The extension to 120 games
+was declared in advance with its rule -- ship only if the pooled pair-aware
+interval excludes 50% -- and it does not (lower bound 47.5%). No further
+extension: a point estimate that will not move off 55% in 120 games is a
++40-elo change at best, and chasing it with more games is how a repository
+ends up shipping noise. By this repository's own precedent — `improving`
 at 60.0% and null-move-off at 55.0% both went the same way — it does not ship
 on that number.
 
