@@ -38,8 +38,16 @@ Deployed does, in 206k nodes. With `mthreat=1` CHO scores +2072 at 300k
 nodes and never proves it — the extension it adds on the defending side
 grows the attacker's tree past the budget. Flipping it on would have turned
 `test_the_mate_after_the_fatal_move_is_seen_quickly` red. It stays off. A
-gate-only form (`mthreat=2`: no extension, only the pruning gate) is being
-tested against that proof before it is measured at all.
+gate-only form (`mthreat=2`: no extension, only the pruning gate) kept the
+proof and measured inert — and the pre-release review found why neither
+mode could ever have worked: the threat is detected inside the null-move
+block, which runs only when the static eval is **at or above beta**, while
+futility prunes only when it is **below alpha**. Those are mutually
+exclusive at one node, so the "gate futility" half was unreachable by
+construction and the flag only ever gated late-move pruning at depth 3–4.
+The idea — do not margin-prune under a mate threat — was never actually
+tested here, and the 50.0% results must not be read as testing it. A real
+version has to look for the threat where the pruning happens, below alpha.
 
 Six shards: 11-9, 11-9, 11-9, 10-10, 11-9, 13-7. The extension to 120 games
 was declared in advance with its rule -- ship only if the pooled pair-aware

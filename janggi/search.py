@@ -121,7 +121,15 @@ class SearchOptions:
     use_hist_lmr: bool = True       # scale the late-move reduction by move history
     use_hist_malus: bool = False    # bounded signed history: gravity + malus for failed quiets
     use_root_guard: bool = False    # never play a root move the current depth has proven lost
-    mate_threat_mode: int = 0       # 0 off; 1 extend + gate pruning (hides proofs); 2 gate pruning only
+    # mate_threat_mode never did what its name says. The threat is detected in
+    # the null-move block, which runs only when static_eval >= beta; futility
+    # prunes only when static_eval + margin <= alpha < beta. The two cannot be
+    # true at the same node, so the 'gate futility' half is unreachable and
+    # the flag only ever gates late-move pruning at depth 3-4. That is why it
+    # measured inert (identical games in every pair). A real mate-threat
+    # defence has to probe for the threat where pruning happens, i.e. below
+    # alpha -- a different design, not this release. Found by review.
+    mate_threat_mode: int = 0       # 0 off; 1 extend + gate (hides proofs); 2 gate only (unreachable, see above)
     use_chk_prune: bool = False     # never futility/LMP-prune a move that gives check
     use_lmr_cap: bool = False       # reduce losing captures too (one ply less than quiets)
     soldier_table: int = 0          # 0 = linear advancement bonus, 1 = per-row table
