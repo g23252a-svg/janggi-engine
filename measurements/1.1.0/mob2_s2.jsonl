@@ -4,3 +4,5 @@
 {"seed": 20260823, "a_is_cho": false, "winner": "han", "plies": 200, "a": "mob=2", "b": ""}
 {"seed": 20260824, "a_is_cho": true, "winner": "cho", "plies": 73, "a": "mob=2", "b": ""}
 {"seed": 20260824, "a_is_cho": false, "winner": "cho", "plies": 200, "a": "mob=2", "b": ""}
+{"seed": 20260825, "a_is_cho": true, "winner": "cho", "plies": 200, "a": "mob=2", "b": ""}
+{"seed": 20260825, "a_is_cho": false, "winner": "cho", "plies": 129, "a": "mob=2", "b": ""}

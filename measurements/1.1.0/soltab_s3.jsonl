@@ -5,3 +5,5 @@
 {"seed": 20260834, "a_is_cho": true, "winner": "cho", "plies": 191, "a": "soltab=1", "b": ""}
 {"seed": 20260834, "a_is_cho": false, "winner": "han", "plies": 200, "a": "soltab=1", "b": ""}
 {"seed": 20260835, "a_is_cho": true, "winner": "han", "plies": 200, "a": "soltab=1", "b": ""}
+{"seed": 20260835, "a_is_cho": false, "winner": "han", "plies": 194, "a": "soltab=1", "b": ""}
+{"seed": 20260836, "a_is_cho": true, "winner": "han", "plies": 194, "a": "soltab=1", "b": ""}
