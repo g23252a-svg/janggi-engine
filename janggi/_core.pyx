@@ -1777,6 +1777,18 @@ cdef int _root_iteration(int* piece, int* side, int who, int depth,
         _make(piece, side, fr, fc, tr, tc)
         if i == 0 or not g_use_pvs:
             score = -_negamax(piece, side, 3 - who, depth - 1, -beta, -a, 1, 1, 1)
+            if (i == 0 and g_use_root_guard and score <= a and a > -MATE * 2
+                    and not g_timeout):
+                # rootguard, under an aspiration window. The PV move just
+                # failed low, and a fail-low is a BOUND: it says "worse than
+                # alpha", never "lost by force", so the guard could not act on
+                # it and the whole depth would be redone with a wider window
+                # that the clock may not allow. Re-search this one move with
+                # the floor removed so the score is exact. If it is a proven
+                # loss the guard has what it needs; if not, the redo starts
+                # from a real number instead of a bound. The cost is one
+                # extra root search that the redo was about to do anyway.
+                score = -_negamax(piece, side, 3 - who, depth - 1, -beta, MATE * 2, 1, 1, 1)
         else:
             score = -_negamax(piece, side, 3 - who, depth - 1, -a - 1, -a, 1, 0, 1)
             if score > a and score < beta and not g_timeout:
