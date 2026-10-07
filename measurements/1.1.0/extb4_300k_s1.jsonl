@@ -7,3 +7,5 @@
 {"seed": 20260815, "a_is_cho": true, "winner": "cho", "plies": 200, "a": "extbudget=4", "b": ""}
 {"seed": 20260815, "a_is_cho": false, "winner": "han", "plies": 200, "a": "extbudget=4", "b": ""}
 {"seed": 20260816, "a_is_cho": true, "winner": "han", "plies": 64, "a": "extbudget=4", "b": ""}
+{"seed": 20260816, "a_is_cho": false, "winner": "cho", "plies": 200, "a": "extbudget=4", "b": ""}
+{"seed": 20260817, "a_is_cho": true, "winner": "han", "plies": 94, "a": "extbudget=4", "b": ""}
