@@ -3,7 +3,7 @@
 Versions before 0.4.0 predate this file; `setup.py` sat at 0.3.0 through all
 three of the patches below, which is what 1.0.0's versioning work is about.
 
-## Unreleased — 1.1.0
+## 1.1.0 — the lost game, fixed by proof
 
 A user played a game through the web UI following the engine's own
 recommendations and lost it. The release is that game, fixed by proof, and
@@ -17,13 +17,34 @@ one. If the partial pass had re-searched that move and proven it **lost by
 force**, the proof was thrown away and the move was played — that is how it
 walked into a 15-ply mate at the UI's budget while two moves held. Now a root
 move that the current depth has proven lost is never played; the best move
-that is not a proven loss is. Under the aspiration window a fail-low is only
-a bound, so the PV move that fails low is re-searched once with the floor
-removed, in the same iteration, and its score is exact. On the lost game's
-position, at the UI's actual 3.5 s: deployed plays the mate; 1.1.0 plays
-(0,5,1,5) and holds. CHO still proves the mate in 214k nodes. Depth 12 from
-the opening: 2,822,961 nodes deployed, 2,823,173 with the guard — 212 more.
-Measured against the deployed engine: ROOTGUARD_ROWS_PENDING.
+that is not a proven loss is. Under the aspiration window, though, that
+proof is usually only a *bound*: the PV move fails low against the window's
+floor, and what the clock cuts off is the wider pass that would say what the
+fail-low means. Three forms of the guard tried to answer that inside the
+budget, and each paid on every move for a guard that fires on few: an exact
+re-search on every fail-low (46.7% at 60k, 40% at 300k, stopped), the same
+only late in the budget, and 8% of every search held back for one
+verification (45.0% at 60k; 57.1% of 42 at 300k, stopped). What ships pays
+only on the move it fires on, in time: when the clock runs out with the PV
+move's fail-low unresolved — the previous best is suspect and nothing has
+replaced it — the search may carry on up to double its budget, once, to
+finish resolving that depth, and then stops. It is what a time manager is
+for. On the lost game's position it plays 차 (2,1)->(8,1), the most
+resistant move, from 700k nodes up, finishing the depth at about 1.25M
+nodes whatever the budget; at the UI's 3.5 s that one move takes 4.5 s
+and holds, where deployed plays the mate. A move can take up to twice its
+tier's time when this fires — 11 s at most on the 6-second tier, inside
+the 30-second byo-yomi the app is used with. The proven-loss rule stays as
+the last resort if the extended search runs out as well. A first form that
+let the extended search run on into the next depth measured 55.0% at 60k
+but used 19% more nodes per move over the match: the extension fires on
+about a quarter of moves, and most of what it bought was being spent past
+the depth it was granted for. A depth-limited search
+never runs out of time and is node-identical to deployed (2,822,961 nodes
+at depth 12 from the opening); CHO still proves the mate in 205,998 nodes.
+Measured against the deployed engine, with the nodes each side really
+used, because a search allowed to overrun its budget is only honest in a
+node-limited match when the summary shows it: 51.7% of 60 at 60k and **60.0% of 60 at 300k**, using 10% and 9% more nodes per move (it thinks longer only when its move has just failed).
 
 **Measurement that survives the box.** The container running matches is
 reclaimed between sessions; two 60-game runs died mid-way with nothing to show
@@ -80,12 +101,17 @@ Every row below is a colour-swapped match at an equal node budget per move,
 | change | alone vs 1.0.0 | verdict |
 | --- | ---: | --- |
 | `histmalus` — bounded signed history (gravity + malus) | 60 games: +33 =0 -27, 55.0%; extended once, as pre-declared, to **120 games: +67 =0 -53, 55.8%, +41 elo (pairs CI 47.5..64.2)** | not distinguishable at 120 — **off by default**, code and flag kept |
-| `rootguard=1` (window on, exact re-search of the PV move on a fail-low) vs deployed, 60k | +28 =0 -32 of 60, 46.7%, -23 elo (pairs CI 34.3..59.0); 2 of 30 pairs identical | not distinguishable; 300k pending |
+| **`rootguard=4`** — the fail-low extension: up to double the budget, once, when the clock runs out on an unresolved PV fail-low — vs deployed, **60k** | +31 =0 -29 of 60, 51.7%, +12 elo (pairs CI 39.7..63.6); A used **10.3% more nodes per move** (64,527 vs 58,517); the proven-loss rule itself changed 5 of 4,668 moves | not worse — **passes** its rule at 60k |
+| **`rootguard=4`** vs deployed, **300k** — the regime the defect lives in | +36 =0 -24 of 60, 60.0%, +70 elo (pairs CI 49.1..70.9); shards 13-7, 10-10, 13-7; A used **9.1% more nodes per move** (313,138 vs 286,984); the proven-loss rule itself changed 3 of 4,192 moves | not worse — **passes** its rule at 300k; **ships** |
+| `rootguard=4`, first form — the extended search ran on into the next depth — vs deployed, 60k | +33 =0 -27 of 60, 55.0%, +35 elo (pairs CI 44.1..65.9); A used **19.2% more nodes per move** (69,823 vs 58,560) | not distinguishable, and the cost was in the wrong place: it now stops when the depth it bought resolves |
+| `rootguard=3` — hold back 8% of every search, verify the PV move on timeout — vs deployed, 60k | +27 =0 -33 of 60, 45.0%, -35 elo (pairs CI 36.4..53.6); every shard 9-11 | not distinguishable, and the reserve is paid on every move — superseded by mode 4 |
+| `rootguard=3` vs deployed, 300k | +24 =0 -18 of 42, 57.1%, +50 elo (pairs CI 44.9..69.4) | stopped when mode 4 held the position for no per-move cost |
+| `rootguard=1` (window on, exact re-search of the PV move on every fail-low) vs deployed, 60k | +28 =0 -32 of 60, 46.7%, -23 elo (pairs CI 34.3..59.0); 2 of 30 pairs identical | not distinguishable at 60k; at 300k +8 =0 -12 of 20, 40.0%, stopped — the re-search is paid at every depth |
 | **the bundle** `asp=0,rootguard=1,extbudget=4` vs deployed, 60k nodes | +31 =0 -29 of 60, 51.7%, +12 elo (pairs CI 37.4..65.9) | not worse at 60k — **passes** its rule; 300k pending |
 | **the bundle** vs deployed, **300k** nodes — the regime the defect lives in | +27 =0 -33 of 60, 45.0%, -35 elo (pairs CI 32.3..57.7) | not distinguishable, but below its best member at both budgets — the plan's leave-one-out rule fires: the pair without `extbudget=4` is measured at 300k |
 | the pair `asp=0,rootguard=1` vs deployed, **300k** (leave-one-out) | +26 =0 -34 of 60, 43.3%, -47 elo (pairs CI 32.1..54.6) | same as the bundle: `extbudget=4` was not the drag, **`asp=0` is** — 60% at 60k, 43% at 300k; the window is worth more the deeper the search. Neither ships. Contingency: keep the window and make rootguard reachable under it |
 | `asp=0,rootguard=1` — no aspiration window, and never play a root move the current depth has proven lost | +36 =0 -24 of 60, 60.0%, +70 elo (pairs CI 46.6..73.4) | not distinguishable alone — judged as part of the defect-fix bundle below |
-| `extbudget=4` — one more check extension per path | +31 =0 -29 of 60, 51.7% (pairs CI 44.4..58.9); 9 of 23 pairs the same game | inert at 60k — judged at 300k, where the defect lives |
+| `extbudget=4` — one more check extension per path | +31 =0 -29 of 60, 51.7% (pairs CI 44.4..58.9); 9 of 23 pairs the same game; at **300k** +13 =0 -20 of 33, 39.4%, stopped | inert at 60k and trending below at 300k — **off**, flag kept |
 | `mob=2` — coverage mobility in the compiled evaluator | +36 =0 -24 of 60, 60.0%, +70 elo (pairs CI 49.3..70.7) | not distinguishable, and it costs 11.5% nps that a node-limited match cannot see — **off**, flag kept |
 | `lmrcap` — reduce SEE-negative captures like late quiets | +10 =0 -13 of 23, 43.5% — stopped early | **off**: palace sacrifices are SEE-negative captures by definition |
 | `soltab=1` — soldier advancement by a per-row table instead of linear to the back rank | +34 =0 -26 of 60, 56.7%, +47 elo (pairs CI 43.8..69.5) | not distinguishable — **off**, flag kept |

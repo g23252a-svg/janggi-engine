@@ -15,12 +15,13 @@ against live human opponents on online services.
 - **Aspiration windows** around the previous iteration's score, widening on
   failure. Turning them off was measured in 1.1.0 and costs strength exactly
   where it matters: 60% at 60k nodes, 43% at 300k.
-- **Never play a root move the current depth has proven lost.** When the clock
-  interrupts an iteration that has just re-searched the previous best move and
-  proven it lost by force, the proof is used instead of discarded; under the
-  window the PV move that fails low is re-searched once with the floor removed
-  so its score is exact. This is how a real game was lost (see
-  `tests/test_regression_games.py`), and it costs 212 nodes at depth 12.
+- **Finish finding out when the best move has just failed.** When the clock
+  interrupts an iteration in which the previous best move has just failed low
+  and nothing has replaced it, the search may carry on up to double its
+  budget, once, instead of playing a move it has just found reason to doubt;
+  and a root move the current depth has proven lost by force is never played.
+  This is how a real game was lost (see `tests/test_regression_games.py`). A
+  depth-limited search never runs out of time and is node-identical to 1.0.0.
 - **Principal variation search** — after the first move, a null window is
   enough to show the rest are worse.
 - **Transposition table** with Zobrist hashing, depth-preferred replacement,
@@ -180,7 +181,7 @@ What that measurement currently says, at an equal 60k nodes per move:
 | futility + late-move pruning | 65.0% of 40 | clearly better |
 | late move reductions | 60.0% of 40 | better, not significant at this sample |
 | null-move pruning | 48.3% of 60, 57.5% of 40, 45.0% of 60 | never significant in 160 games — kept on only because removing it costs what `histlmr` wins |
-| `rootguard` (1.1.0, ships) | ROOTGUARD_README_PENDING | fixes a real lost game by proof; see CHANGELOG |
+| `rootguard` (1.1.0, ships) | 51.7% of 60 at 60k and **60.0% of 60 at 300k**, using 10% and 9% more nodes per move (it thinks longer only when its move has just failed) | fixes a real lost game by proof; see CHANGELOG |
 | bounded signed history (`histmalus=1`) | 55.8% of 120 | not distinguishable at 120 — off |
 | mobility in the compiled evaluator (`mob=2`) | 60.0% of 60 | not distinguishable, and costs 11.5% nps a node match cannot see — off |
 | soldier table (`soltab=1`) | 56.7% of 60 | not distinguishable — off |

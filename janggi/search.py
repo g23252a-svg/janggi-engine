@@ -97,8 +97,10 @@ class SearchOptions:
 
     They exist as flags so a change can be measured against the same engine with
     the feature toggled (``python -m janggi.match --a "" --b "histlmr=0"``)
-    instead of against a guess. All are on by default except ``use_nmp``, which
-    earned its way off -- see below.
+    instead of against a guess. Every 1.0.0 technique is on by default
+    (``use_nmp`` included: it was measured off and came back, see below).
+    Of the flags added in 1.1.0 only ``root_guard_mode`` earned its place;
+    the rest stay off with their measurements in CHANGELOG.md.
     """
 
     use_tt: bool = True             # transposition table
@@ -131,7 +133,7 @@ class SearchOptions:
     # budget once and carry on. Modes 1-3 measured
     # 40-47% against 1.0.0 (CHANGELOG): each pays on every move for a guard
     # that fires on few. Mode 4 pays only on the moves it fires on, in time.
-    root_guard_mode: int = 0
+    root_guard_mode: int = 4
     # mate_threat_mode never did what its name says. The threat is detected in
     # the null-move block, which runs only when static_eval >= beta; futility
     # prunes only when static_eval + margin <= alpha < beta. The two cannot be
