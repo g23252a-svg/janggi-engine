@@ -5,9 +5,75 @@ three of the patches below, which is what 1.0.0's versioning work is about.
 
 ## Unreleased — 1.1.0
 
-Every row below is a colour-swapped match at an equal 60k nodes per move,
+A user played a game through the web UI following the engine's own
+recommendations and lost it. The release is that game, fixed by proof, and
+the measurement discipline it took to ship nothing else.
+
+### What ships
+
+**rootguard.** At the end of an interrupted iteration the engine used to keep
+the previous depth's best move unless the partial pass had found a *better*
+one. If the partial pass had re-searched that move and proven it **lost by
+force**, the proof was thrown away and the move was played — that is how it
+walked into a 15-ply mate at the UI's budget while two moves held. Now a root
+move that the current depth has proven lost is never played; the best move
+that is not a proven loss is. Under the aspiration window a fail-low is only
+a bound, so the PV move that fails low is re-searched once with the floor
+removed, in the same iteration, and its score is exact. On the lost game's
+position, at the UI's actual 3.5 s: deployed plays the mate; 1.1.0 plays
+(0,5,1,5) and holds. CHO still proves the mate in 214k nodes. Depth 12 from
+the opening: 2,822,961 nodes deployed, 2,823,173 with the guard — 212 more.
+Measured against the deployed engine: ROOTGUARD_ROWS_PENDING.
+
+**Measurement that survives the box.** The container running matches is
+reclaimed between sessions; two 60-game runs died mid-way with nothing to show
+before `--log` / `--resume` / `--pool` existed. Every game is one JSON line
+with its opening seed, colours, result, ending reason and budget; a killed run
+resumes from the last finished game; shards with disjoint seed ranges pool
+into one summary. A log from a different configuration refuses to resume.
+
+**Intervals computed with the right unit.** The two games of a colour-swapped
+pair share an opening, so they are not independent trials, and every interval
+this repository had printed was too narrow. `summarize()` now reports the
+interval over pairs (sample variance, at least two pairs, no verdict under 20
+games). It paid for itself at once: a flag that had measured "50.0%, not
+distinguishable" turned out to have played the identical game in every pair —
+the pair interval is zero-width, the per-game one said 34..66.
+
+**A prover sweep that can fail.** The mate-in-1/2 sweep in `test_tactics.py`
+passes every flag in milliseconds, including one that demonstrably hides a
+mate. The sweep that catches that is the 15-ply proof from the lost game,
+under every configuration that could ship, with a 2× node margin. And the
+exact deployed 1.0.0 search is pinned, flag by flag, at 2,822,961 nodes:
+every A/B in this campaign used `""` to mean that engine.
+
+### What was tried and did not ship
+
+Eight search and evaluation changes were written, each behind a flag, each
+default-off and node-identical when off, each measured alone against the
+deployed engine. One ships. The rest are in the table below with the number
+that decided them; the code and flags stay so the next attempt starts from a
+measurement rather than a memory.
+
+Two of them were recorded as shipping before being reversed, and both
+reversals are worth more than the changes:
+
+- `mthreat=1` was "a defect fix at zero cost" on 30-30 of 60. The design
+  review then measured the half of the contract the verdict had not: after the
+  fatal move the attacker must prove the mate, and with the flag on it scores
+  +2072 instead. The 30-30 was also no evidence — 17 of 30 pairs were the same
+  game. And the mechanism could never have worked: the threat is detected only
+  when the static eval is at or above beta, futility prunes only below alpha.
+- `asp=0 + rootguard=1 (+ extbudget=4)` fixed the lost game by proof and
+  scored 60% at 60k. At 300k, the regime the defect lives in, the pair scored
+  43% and the bundle 45%, and the leave-one-out showed the window was the
+  drag: turning aspiration off is worth more the deeper the search goes, and
+  the UI searches deeper still. Keeping the window and making the guard
+  reachable under it is what ships instead.
+
+Every row below is a colour-swapped match at an equal node budget per move,
 60 games over three 20-game shards with disjoint opening seeds, pooled with
-`python -m janggi.match --pool`.
+`python -m janggi.match --pool` and reported with the pair-aware interval.
 
 ### Measured, not assumed
 
