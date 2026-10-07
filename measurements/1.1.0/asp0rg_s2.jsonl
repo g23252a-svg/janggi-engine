@@ -15,3 +15,6 @@
 {"seed": 20260829, "a_is_cho": true, "winner": "cho", "plies": 200, "a": "asp=0,rootguard=1", "b": ""}
 {"seed": 20260829, "a_is_cho": false, "winner": "cho", "plies": 167, "a": "asp=0,rootguard=1", "b": ""}
 {"seed": 20260830, "a_is_cho": true, "winner": "cho", "plies": 200, "a": "asp=0,rootguard=1", "b": ""}
+{"seed": 20260830, "a_is_cho": false, "winner": "cho", "plies": 200, "a": "asp=0,rootguard=1", "b": ""}
+{"seed": 20260831, "a_is_cho": true, "winner": "cho", "plies": 200, "a": "asp=0,rootguard=1", "b": ""}
+{"seed": 20260831, "a_is_cho": false, "winner": "cho", "plies": 101, "a": "asp=0,rootguard=1", "b": ""}
