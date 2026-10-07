@@ -973,6 +973,7 @@ cdef int _evaluate2(int* piece, int* side):
     cdef int sol_file[2][9]        # soldiers per side per file
     cdef int occ_file[9]           # any piece on the file (for open-file chariots)
     cdef int phase, freelegs, danger_h = 0, danger_c = 0
+    cdef int cov_h = 0, cov_c = 0
     cdef int ORTH[4][2]
     ORTH[0][0]=1; ORTH[0][1]=0; ORTH[1][0]=-1; ORTH[1][1]=0
     ORTH[2][0]=0; ORTH[2][1]=1; ORTH[3][0]=0; ORTH[3][1]=-1
@@ -1120,6 +1121,16 @@ cdef int _evaluate2(int* piece, int* side):
         score += material * 2
     elif g_base_ply >= 80:
         score += material
+    if g_mob:
+        # Coverage-based mobility: squares each side bears on, minus the ones
+        # its own pieces stand on (bearing on your own piece is defence, not
+        # mobility). amap[0..89] is HAN (side 1), amap[90..179] is CHO.
+        for i in range(90):
+            if amap[i] and side[i] != 1:
+                cov_h += 1
+            if amap[90 + i] and side[i] != 2:
+                cov_c += 1
+        score += g_mob * (cov_h - cov_c)
     return score
 
 
@@ -1192,6 +1203,14 @@ cdef int g_use_mate_threat = 0  # a null-move fail-low with a mate score is a th
 cdef int g_use_chk_prune = 0    # never futility/LMP-prune a move that gives check
 cdef int g_use_lmr_cap = 0      # reduce losing (SEE-negative) captures too, one ply less than quiets
 cdef int g_soltab = 0           # 0: soldier advancement linear adv*8; 1: per-row table
+# Mobility weight, 0 = off. The compiled evaluator had no mobility term at all:
+# the Python evaluate() wrapper adds W_MOBILITY * (pseudo-moves), but the
+# search calls _evaluate2 bare, so a chariot boxed in with no move scored the
+# same as a free one except through the open-file bonus. Coverage is counted
+# from the attack maps the evaluator already builds -- squares a side bears on
+# that are not occupied by its own pieces -- so the cost is one pass over 180
+# ints, not a move generation.
+cdef int g_mob = 0
 # Soldier value by distance advanced (index = adv, 0..9). Linear adv*8 made the
 # most valuable soldier on the board one standing on the enemy back rank, where
 # it can only shuffle sideways and attacks nothing -- and soldiers cannot
@@ -1797,13 +1816,13 @@ def core_reset(int max_depth, int ext_budget, int use_tt=1, int use_lmr=1,
                long long node_limit=0, int eval_version=2,
                int use_hist_lmr=1, int use_hist_malus=0,
                int use_root_guard=0, int use_mate_threat=0, int use_chk_prune=0,
-               int use_lmr_cap=0, int soltab=0):
+               int use_lmr_cap=0, int soltab=0, int mob=0):
     """Reset TT / killers / history / stats for a fresh Engine.search()."""
     global g_nodes, g_qnodes, g_tthits, g_timeout, g_ext, g_maxdepth
     global g_use_tt, g_use_lmr, g_use_ext, g_use_nmp, g_use_pvs
     global g_use_fut, g_use_lmp, g_use_asp, g_use_rep, g_node_limit, n_game_hash
     global g_eval_ver, g_use_hist_lmr, g_hist_max, g_use_hist_malus
-    global g_use_root_guard, g_use_mate_threat, g_use_chk_prune, g_use_lmr_cap, g_soltab
+    global g_use_root_guard, g_use_mate_threat, g_use_chk_prune, g_use_lmr_cap, g_soltab, g_mob
     cdef int i
     for i in range(TT_SIZE):
         tt_flag[i] = -1
@@ -1831,6 +1850,7 @@ def core_reset(int max_depth, int ext_budget, int use_tt=1, int use_lmr=1,
     g_use_chk_prune = use_chk_prune
     g_use_lmr_cap = use_lmr_cap
     g_soltab = soltab
+    g_mob = mob
     for i in range(204):
         root_iter[i] = 0
     g_hist_max = 0
