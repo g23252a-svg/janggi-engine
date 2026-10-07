@@ -2,3 +2,5 @@
 {"seed": 20260842, "a_is_cho": false, "winner": "cho", "plies": 127, "a": "histmalus=1", "b": ""}
 {"seed": 20260843, "a_is_cho": true, "winner": "cho", "plies": 200, "a": "histmalus=1", "b": ""}
 {"seed": 20260843, "a_is_cho": false, "winner": "han", "plies": 122, "a": "histmalus=1", "b": ""}
+{"seed": 20260844, "a_is_cho": true, "winner": "han", "plies": 200, "a": "histmalus=1", "b": ""}
+{"seed": 20260844, "a_is_cho": false, "winner": "han", "plies": 200, "a": "histmalus=1", "b": ""}
