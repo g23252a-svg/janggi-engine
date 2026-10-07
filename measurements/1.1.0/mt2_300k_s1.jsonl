@@ -8,3 +8,5 @@
 {"seed": 20260815, "a_is_cho": false, "winner": "han", "plies": 144, "reason": "mate", "a": "asp=0,rootguard=1,extbudget=4,mthreat=2", "b": "asp=0,rootguard=1,extbudget=4"}
 {"seed": 20260816, "a_is_cho": true, "winner": "cho", "plies": 200, "reason": "cap", "a": "asp=0,rootguard=1,extbudget=4,mthreat=2", "b": "asp=0,rootguard=1,extbudget=4"}
 {"seed": 20260816, "a_is_cho": false, "winner": "cho", "plies": 200, "reason": "cap", "a": "asp=0,rootguard=1,extbudget=4,mthreat=2", "b": "asp=0,rootguard=1,extbudget=4"}
+{"seed": 20260817, "a_is_cho": true, "winner": "han", "plies": 200, "reason": "cap", "a": "asp=0,rootguard=1,extbudget=4,mthreat=2", "b": "asp=0,rootguard=1,extbudget=4"}
+{"seed": 20260817, "a_is_cho": false, "winner": "han", "plies": 200, "reason": "cap", "a": "asp=0,rootguard=1,extbudget=4,mthreat=2", "b": "asp=0,rootguard=1,extbudget=4"}
