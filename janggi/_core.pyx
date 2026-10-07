@@ -2019,14 +2019,18 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
                     # nothing has replaced it. Allow up to double the budget,
                     # once, and carry on as if the clock had not run out: the
                     # pass is rerun at the same window, which the table makes
-                    # cheap, and the normal widening follows. (Rerunning with
-                    # the window off instead was tried: every other move then
-                    # fails high against a mate-score alpha and gets a full
-                    # re-search, and the depth never completes.) Modes 1-3
-                    # tried to answer the same question inside the budget by
-                    # paying on every move for a re-search or a reserve; this
-                    # pays only here. In the lost game, deployed finds the
-                    # holding move at 1.5x the UI's budget.
+                    # cheap, and the normal widening follows. The extension
+                    # is for resolving THIS depth: once it completes, the
+                    # search stops (below) instead of spending what is left
+                    # on the next depth -- letting it run on measured 55% but
+                    # cost 19% more nodes per move over a match. (Rerunning
+                    # with the window off instead was tried: every other move
+                    # then fails high against a mate-score alpha and gets a
+                    # full re-search, and the depth never completes.) Modes
+                    # 1-3 tried to answer the same question inside the budget
+                    # by paying on every move for a re-search or a reserve;
+                    # this pays only here. In the lost game, deployed finds
+                    # the holding move at 1.5x the UI's budget.
                     extended = 1
                     g_guard_verify += 1
                     if g_node_limit > 0:
@@ -2111,6 +2115,8 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
         _sort_root()
         if final_score > MATE_BOUND or final_score < -MATE_BOUND:
             break     # forced result found; deeper search cannot improve on it
+        if extended:
+            break     # the fail-low extension bought this depth; it is resolved
 
     # --- principal variation, walked out of the transposition table ------
     pv = []
