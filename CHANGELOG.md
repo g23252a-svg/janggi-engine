@@ -14,6 +14,10 @@ Every row below is a colour-swapped match at an equal 60k nodes per move,
 | change | alone vs 1.0.0 | verdict |
 | --- | ---: | --- |
 | `histmalus` — bounded signed history (gravity + malus) | +33 =0 -27 of 60, 55.0%, +35 elo (CI 42.4..67.6) | not distinguishable from noise — **off by default**, code and flag kept |
+| `asp=0,rootguard=1` — no aspiration window, and never play a root move the current depth has proven lost | +36 =0 -24 of 60, 60.0%, +70 elo (pairs CI 46.6..73.4) | not distinguishable alone — judged as part of the defect-fix bundle below |
+| `extbudget=4` — one more check extension per path | +31 =0 -29 of 60, 51.7% (pairs CI 44.4..58.9); 9 of 23 pairs the same game | inert at 60k — judged at 300k, where the defect lives |
+| `mob=2` — coverage mobility in the compiled evaluator | +36 =0 -24 of 60, 60.0%, +70 elo (pairs CI 49.3..70.7) | not distinguishable, and it costs 11.5% nps that a node-limited match cannot see — **off**, flag kept |
+| `lmrcap` — reduce SEE-negative captures like late quiets | +10 =0 -13 of 23, 43.5% — stopped early | **off**: palace sacrifices are SEE-negative captures by definition |
 | `mthreat=1` — a null-move fail-low with a mate score extends and disables margin pruning | +30 =0 -30 of 60, 50.0% — but 17 of 30 pairs were the **same game** (inert at 60k) | **does not ship**: it hides the CHO-side mate proof (see below) |
 
 `histmalus` is the principled fix for the finding in the 1.0.0 correction below
