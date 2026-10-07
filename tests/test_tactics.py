@@ -155,7 +155,14 @@ def test_finds_mate_in_two(case):
 @pytest.mark.parametrize(
     "spec",
     ["", "nmp=0", "lmr=0", "fut=0", "lmp=0", "asp=0", "tt=0",
-     "nmp=0,lmr=0,fut=0,lmp=0,asp=0"],
+     "nmp=0,lmr=0,fut=0,lmp=0,asp=0",
+     # New flags default OFF, so the prover must also cover their ON forms, or a
+     # flag that hides a mate is only discovered when it is flipped on to ship.
+     "histmalus=1", "rootguard=1", "mthreat=1", "mthreat=2", "chkprune=1",
+     "lmrcap=1", "soltab=1", "mob=2", "extbudget=4",
+     # the 1.1.0 shipping candidate, and the exact deployed 1.0.0 form
+     "asp=0,rootguard=1,extbudget=4",
+     "asp=1,rootguard=0,extbudget=3,histmalus=0,mthreat=0,chkprune=0,lmrcap=0,soltab=0,mob=0"],
 )
 def test_pruning_never_hides_a_forced_mate(spec):
     """Each pruning technique, on its own and all off, must still find mate.

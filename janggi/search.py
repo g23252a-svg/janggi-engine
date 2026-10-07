@@ -121,7 +121,7 @@ class SearchOptions:
     use_hist_lmr: bool = True       # scale the late-move reduction by move history
     use_hist_malus: bool = False    # bounded signed history: gravity + malus for failed quiets
     use_root_guard: bool = False    # never play a root move the current depth has proven lost
-    use_mate_threat: bool = False   # null-move fail-low with a mate score: extend, do not prune
+    mate_threat_mode: int = 0       # 0 off; 1 extend + gate pruning (hides proofs); 2 gate pruning only
     use_chk_prune: bool = False     # never futility/LMP-prune a move that gives check
     use_lmr_cap: bool = False       # reduce losing captures too (one ply less than quiets)
     soldier_table: int = 0          # 0 = linear advancement bonus, 1 = per-row table
@@ -136,7 +136,7 @@ class SearchOptions:
         "eval": "eval_version",
         "histlmr": "use_hist_lmr",
         "histmalus": "use_hist_malus",
-        "rootguard": "use_root_guard", "mthreat": "use_mate_threat", "chkprune": "use_chk_prune",
+        "rootguard": "use_root_guard", "mthreat": "mate_threat_mode", "chkprune": "use_chk_prune",
         "lmrcap": "use_lmr_cap", "soltab": "soldier_table", "mob": "mobility_weight",
     }
 
@@ -155,7 +155,7 @@ class SearchOptions:
             field_name = cls._ALIASES.get(key, key)
             if field_name not in cls.__dataclass_fields__:
                 raise ValueError(f"unknown search option {key!r}")
-            if field_name in ("ext_budget", "node_limit", "eval_version", "soldier_table", "mobility_weight"):
+            if field_name in ("ext_budget", "node_limit", "eval_version", "soldier_table", "mobility_weight", "mate_threat_mode"):
                 values[field_name] = int(raw)
             else:
                 values[field_name] = raw.strip() not in ("0", "false", "False", "no")
@@ -287,7 +287,7 @@ class Engine:
             1 if opts.use_hist_lmr else 0,
             1 if opts.use_hist_malus else 0,
             1 if opts.use_root_guard else 0,
-            1 if opts.use_mate_threat else 0,
+            opts.mate_threat_mode,
             1 if opts.use_chk_prune else 0,
             1 if opts.use_lmr_cap else 0,
             opts.soldier_table,

@@ -91,3 +91,23 @@ def test_the_mate_after_the_fatal_move_is_seen_quickly():
     engine = Engine(max_depth=30, options=SearchOptions(node_limit=300_000))
     _, score = engine.search(board, CHO, game_ply=54)
     assert score > MATE_BOUND, f"CHO should see the forced mate; scored {score}"
+
+
+# The exact search the 1.0.0 deployment runs, spelled out flag by flag so that
+# it keeps meaning the same thing after any default flips. Every A/B in the
+# 1.1.0 campaign used "" to mean this engine; if this number moves, "" has
+# silently stopped meaning that and every verdict in CHANGELOG is suspect.
+DEPLOYED_1_0_0 = ("asp=1,rootguard=0,extbudget=3,histmalus=0,mthreat=0,"
+                  "chkprune=0,lmrcap=0,soltab=0,mob=0")
+DEPLOYED_1_0_0_DEPTH12_NODES = 2_822_961
+
+
+@needs_core
+def test_the_deployed_search_is_node_identical():
+    engine = Engine(max_depth=12, options=SearchOptions.parse(DEPLOYED_1_0_0))
+    engine.search(Board.standard(), CHO)
+    assert engine.stats.depth_reached == 12
+    assert engine.stats.total_nodes == DEPLOYED_1_0_0_DEPTH12_NODES, (
+        f"{engine.stats.total_nodes:,} nodes: the deployed-form search changed; "
+        "a flag is not inert when off, or a default moved without its flag"
+    )

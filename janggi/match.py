@@ -158,11 +158,13 @@ def run_match(a: Config, b: Config, games: int, seed: int, opening_plies: int,
     pairs = max(1, games // 2)
     done = _load_log(log_path) if resume else {}
     skipped = 0
+    pair_scores: list[float] = []
     log_fh = open(log_path, "a", encoding="utf-8") if log_path else None
     try:
         for pair in range(pairs):
             game_seed = seed + pair
             start, opening = random_opening(game_seed, opening_plies)
+            pair_pts = 0.0
             for a_is_cho in (True, False):
                 a_side = "cho" if a_is_cho else "han"
                 rec = done.get((game_seed, a_is_cho))
@@ -180,9 +182,9 @@ def run_match(a: Config, b: Config, games: int, seed: int, opening_plies: int,
                         }) + "\n")
                         log_fh.flush()
                 if winner == "draw":
-                    draws += 1
+                    draws += 1; pair_pts += 0.5
                 elif winner == a_side:
-                    wins += 1
+                    wins += 1; pair_pts += 1.0
                 else:
                     losses += 1
                 played = wins + draws + losses
@@ -194,12 +196,13 @@ def run_match(a: Config, b: Config, games: int, seed: int, opening_plies: int,
                     f"score {score * 100:.1f}%{tag}",
                     flush=True,
                 )
+            pair_scores.append(pair_pts)
     finally:
         if log_fh is not None:
             log_fh.close()
     if skipped:
         print(f"  ({skipped} game(s) taken from {log_path}; {pairs * 2 - skipped} played now)")
-    return summarize(a.name, b.name, wins, draws, losses)
+    return summarize(a.name, b.name, wins, draws, losses, pair_scores)
 
 
 def pool_logs(paths: list[str]) -> dict:
@@ -208,6 +211,7 @@ def pool_logs(paths: list[str]) -> dict:
     wins = draws = losses = 0
     seen: set[tuple[int, bool]] = set()
     specs: set[tuple[str, str]] = set()
+    by_pair: dict[int, dict[bool, float]] = {}
     for path in paths:
         for key, rec in _load_log(path).items():
             if key in seen:
@@ -216,17 +220,33 @@ def pool_logs(paths: list[str]) -> dict:
             specs.add((rec.get("a", ""), rec.get("b", "")))
             a_side = "cho" if rec["a_is_cho"] else "han"
             if rec["winner"] == "draw":
-                draws += 1
+                draws += 1; pts = 0.5
             elif rec["winner"] == a_side:
-                wins += 1
+                wins += 1; pts = 1.0
             else:
-                losses += 1
+                losses += 1; pts = 0.0
+            by_pair.setdefault(rec["seed"], {})[rec["a_is_cho"]] = pts
     if len(specs) > 1:
         print(f"  WARNING: pooling logs with different configurations: {sorted(specs)}")
-    return summarize("A", "B", wins, draws, losses)
+    pair_scores = [sum(p.values()) for p in by_pair.values() if len(p) == 2]
+    half = sum(1 for p in by_pair.values() if len(p) != 2)
+    if half:
+        print(f"  ({half} half-played pair(s) count in the score but not in the pair interval)")
+    return summarize("A", "B", wins, draws, losses, pair_scores or None)
 
 
-def summarize(a_name: str, b_name: str, wins: int, draws: int, losses: int) -> dict:
+def summarize(a_name: str, b_name: str, wins: int, draws: int, losses: int,
+              pair_scores: list[float] | None = None) -> dict:
+    """Score, interval, elo and verdict.
+
+    The two games of a colour-swapped pair share one opening, so they are not
+    independent trials -- a pair that is decided by the opening comes out 2-0
+    or 0-2 whichever engine is better, and treating those as two independent
+    games made every interval in this repository too narrow. When
+    ``pair_scores`` is given (A's points per pair, 0 / 0.5 / 1 / 1.5 / 2) the
+    interval is computed over pairs. Without it the per-game formula is used,
+    which is what the earlier releases reported; both are printed when the
+    pair data exists so the two can be compared."""
     played = wins + draws + losses
     score = (wins + 0.5 * draws) / played if played else 0.0
     # Standard error of the per-game score, then a 95% interval. Draws carry no
@@ -237,11 +257,20 @@ def summarize(a_name: str, b_name: str, wins: int, draws: int, losses: int) -> d
         + losses * (0.0 - score) ** 2
     ) / played if played else 0.0
     stderr = math.sqrt(var / played) if played else 0.0
-    lo, hi = score - 1.96 * stderr, score + 1.96 * stderr
-    if score in (0.0, 1.0):
-        elo = float("inf") if score == 1.0 else float("-inf")
-    else:
-        elo = -400.0 * math.log10(1.0 / score - 1.0)
+    lo_game, hi_game = score - 1.96 * stderr, score + 1.96 * stderr
+    lo, hi = lo_game, hi_game
+    pair_ci = None
+    if pair_scores:
+        n = len(pair_scores)
+        mean = sum(pair_scores) / n            # A's points per pair, out of 2
+        pvar = sum((x - mean) ** 2 for x in pair_scores) / n
+        pse = math.sqrt(pvar / n)
+        lo, hi = (mean - 1.96 * pse) / 2.0, (mean + 1.96 * pse) / 2.0
+        pair_ci = (lo, hi)
+    lo = max(0.0, lo); hi = min(1.0, hi)
+    # Clamp so a 2-0 run reports a finite number that survives json.dumps.
+    clamped = min(max(score, 0.5 / max(played, 1)), 1.0 - 0.5 / max(played, 1))
+    elo = -400.0 * math.log10(1.0 / clamped - 1.0)
     verdict = (
         "A is stronger" if lo > 0.5
         else "B is stronger" if hi < 0.5
@@ -249,12 +278,18 @@ def summarize(a_name: str, b_name: str, wins: int, draws: int, losses: int) -> d
     )
     print()
     print(f"{a_name} vs {b_name}: +{wins} ={draws} -{losses} of {played}")
-    print(f"  score {score * 100:.1f}%  (95% CI {lo * 100:.1f}%..{hi * 100:.1f}%)")
+    if pair_ci is not None:
+        print(f"  score {score * 100:.1f}%  (95% CI over {len(pair_scores)} pairs "
+              f"{lo * 100:.1f}%..{hi * 100:.1f}%; per-game formula would say "
+              f"{max(0.0, lo_game) * 100:.1f}%..{min(1.0, hi_game) * 100:.1f}%)")
+    else:
+        print(f"  score {score * 100:.1f}%  (95% CI {lo * 100:.1f}%..{hi * 100:.1f}%)")
     print(f"  elo   {elo:+.0f}")
     print(f"  {verdict}")
     return {
         "wins": wins, "draws": draws, "losses": losses, "games": played,
         "score": score, "ci": (lo, hi), "elo": elo, "verdict": verdict,
+        "pairs": len(pair_scores) if pair_scores else 0,
     }
 
 

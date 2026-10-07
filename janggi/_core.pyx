@@ -1199,7 +1199,10 @@ cdef int g_use_hist_malus = 0
 # real lost game (tests/test_regression_games.py): at the UI's budget the
 # engine walked into a 15-ply mate while two moves held.
 cdef int g_use_root_guard = 0   # never play a root move this depth has proven lost
-cdef int g_use_mate_threat = 0  # a null-move fail-low with a mate score is a threat: extend, do not prune
+cdef int g_use_mate_threat = 0  # mate-threat mode: 0 off; 1 extend + gate pruning; 2 gate pruning only.
+                                # Mode 1 hides the attacker's own proof (the extension on the defending
+                                # side grows the attacker's tree past the budget: +2072 instead of mate
+                                # at 300k on the lost-game position), so it is never the default.
 cdef int g_use_chk_prune = 0    # never futility/LMP-prune a move that gives check
 cdef int g_use_lmr_cap = 0      # reduce losing (SEE-negative) captures too, one ply less than quiets
 cdef int g_soltab = 0           # 0: soldier advancement linear adv*8; 1: per-row table
@@ -1574,7 +1577,7 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
         extend = 1
         g_ext -= 1
     cdef int budgeted_ext = extend      # only this one is given back below
-    if mate_threat and extend == 0:
+    if mate_threat and extend == 0 and g_use_mate_threat == 1:
         extend = 1
 
     cdef int best_score = -MATE * 2

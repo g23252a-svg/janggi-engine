@@ -83,3 +83,42 @@ def test_pool_warns_when_configurations_differ(tmp_path, capsys):
     s2.write_text(json.dumps({"seed": 2, "a_is_cho": True, "winner": "cho", "plies": 1, "a": "", "b": "y=0"}) + "\n")
     match.pool_logs([str(s1), str(s2)])
     assert "different configurations" in capsys.readouterr().out
+
+
+# ------------------------------------------------------------ the interval
+def test_pair_interval_is_zero_width_when_every_pair_splits(capsys):
+    """Every pair 1-1: the opening decided nothing, A and B are level, and
+    there is no variance between pairs to put in the interval."""
+    res = match.summarize("A", "B", 10, 0, 10, pair_scores=[1.0] * 10)
+    lo, hi = res["ci"]
+    assert abs(lo - 0.5) < 1e-9 and abs(hi - 0.5) < 1e-9
+
+
+def test_pair_interval_is_wider_than_per_game_when_pairs_are_decided_by_the_opening(capsys):
+    """Every pair 2-0 or 0-2: each opening decided both games the same way, so
+    there are 10 independent observations, not 20. The per-game formula
+    pretends there are 20 and reports an interval that is too narrow."""
+    pairs = [2.0] * 5 + [0.0] * 5
+    pair_res = match.summarize("A", "B", 10, 0, 10, pair_scores=pairs)
+    game_res = match.summarize("A", "B", 10, 0, 10)
+    assert pair_res["score"] == game_res["score"] == 0.5
+    assert (pair_res["ci"][1] - pair_res["ci"][0]) > (game_res["ci"][1] - game_res["ci"][0])
+
+
+def test_summary_round_trips_through_json_even_at_a_clean_sweep(capsys):
+    import json as _json
+    res = match.summarize("A", "B", 4, 0, 0, pair_scores=[2.0, 2.0])
+    _json.dumps(res)                      # inf would raise
+    assert res["elo"] > 0 and res["elo"] < 10_000
+
+
+def test_pool_uses_pairs_and_counts_half_pairs_in_the_score_only(tmp_path, capsys):
+    rec = lambda seed, cho, w: json.dumps({"seed": seed, "a_is_cho": cho, "winner": w, "plies": 1, "a": "", "b": "x=0"}) + "\n"
+    s1 = tmp_path / "s1.jsonl"
+    s1.write_text(rec(1, True, "cho") + rec(1, False, "han")      # pair 1: A 2-0
+                  + rec(2, True, "han") + rec(2, False, "cho")    # pair 2: A 0-2
+                  + rec(3, True, "cho"))                          # half pair: A won one
+    res = match.pool_logs([str(s1)])
+    assert res["games"] == 5 and res["wins"] == 3 and res["losses"] == 2
+    assert res["pairs"] == 2
+    assert "half-played pair" in capsys.readouterr().out
