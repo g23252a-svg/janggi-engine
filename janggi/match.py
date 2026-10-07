@@ -64,8 +64,15 @@ def _history_hashes(hashes: list[int], last_capture_at: int) -> list[int]:
 
 def play_game(
     cho: Config, han: Config, opening_plies: list[Move], start: tuple[str, str]
-) -> tuple[str, int]:
-    """Play one game; return (winner, plies_played)."""
+) -> tuple[str, int, str]:
+    """Play one game; return (winner, plies_played, reason).
+
+    ``reason`` says how it ended -- "mate", "stalemate" (no legal move, not in
+    check: a loss under the rules used here), "repetition" (every continuation
+    would be a third repetition), "no_move" (the engine returned nothing) or
+    "cap" (the 200-ply limit, decided on points). A candidate whose wins are
+    all "cap" is winning on points at the bell, not by mating, and the
+    endings histogram in every summary is there to make that visible."""
     board = Board.standard(*start)
     tracker = RepetitionTracker()
     tracker.record(board)
@@ -84,14 +91,15 @@ def play_game(
         side = board.side_to_move
         legal = board.legal_moves(side)
         if not legal:
-            return ("han" if -side == HAN else "cho"), ply
+            how = "mate" if board.in_check(side) else "stalemate"
+            return ("han" if -side == HAN else "cho"), ply, how
         forbidden = {
             m.as_tuple() for m in legal if tracker.would_repeat_thrice(board, m)
         }
         if len(forbidden) == len(legal):
             # Every continuation would be an illegal third repetition, which
             # under these rules loses for the side that has to move.
-            return ("han" if -side == HAN else "cho"), ply
+            return ("han" if -side == HAN else "cho"), ply, "repetition"
         move, _score = engines[side].search(
             board,
             side,
@@ -100,13 +108,13 @@ def play_game(
             game_ply=ply,
         )
         if move is None:
-            return ("han" if -side == HAN else "cho"), ply
+            return ("han" if -side == HAN else "cho"), ply, "no_move"
         board.make(move)
         tracker.record(board)
         hashes.append(board.zobrist())
         if move.captured:
             last_capture_at = len(hashes) - 1
-    return judge(board)["winner"], MAX_MOVES
+    return judge(board)["winner"], MAX_MOVES, "cap"
 
 
 def random_opening(seed: int, plies: int) -> tuple[tuple[str, str], list[Move]]:
@@ -159,6 +167,7 @@ def run_match(a: Config, b: Config, games: int, seed: int, opening_plies: int,
     done = _load_log(log_path) if resume else {}
     skipped = 0
     pair_scores: list[float] = []
+    endings: dict[str, list[int]] = {}
     log_fh = open(log_path, "a", encoding="utf-8") if log_path else None
     try:
         for pair in range(pairs):
@@ -170,14 +179,15 @@ def run_match(a: Config, b: Config, games: int, seed: int, opening_plies: int,
                 rec = done.get((game_seed, a_is_cho))
                 if rec is not None:
                     winner, plies = rec["winner"], rec["plies"]
+                    reason = rec.get("reason", "?")
                     skipped += 1
                 else:
                     cho_cfg, han_cfg = (a, b) if a_is_cho else (b, a)
-                    winner, plies = play_game(cho_cfg, han_cfg, opening, start)
+                    winner, plies, reason = play_game(cho_cfg, han_cfg, opening, start)
                     if log_fh is not None:
                         log_fh.write(json.dumps({
                             "seed": game_seed, "a_is_cho": a_is_cho,
-                            "winner": winner, "plies": plies,
+                            "winner": winner, "plies": plies, "reason": reason,
                             "a": a.spec, "b": b.spec,
                         }) + "\n")
                         log_fh.flush()
@@ -190,9 +200,10 @@ def run_match(a: Config, b: Config, games: int, seed: int, opening_plies: int,
                 played = wins + draws + losses
                 score = (wins + 0.5 * draws) / played
                 tag = " (from log)" if rec is not None else ""
+                endings.setdefault(reason, [0, 0, 0])[0 if winner == "draw" else (1 if winner == a_side else 2)] += 1
                 print(
                     f"  game {played}/{pairs * 2}: {a.name} as {a_side} -> {winner} "
-                    f"({plies} plies) | W/D/L {wins}/{draws}/{losses} "
+                    f"({plies} plies, {reason}) | W/D/L {wins}/{draws}/{losses} "
                     f"score {score * 100:.1f}%{tag}",
                     flush=True,
                 )
@@ -202,7 +213,7 @@ def run_match(a: Config, b: Config, games: int, seed: int, opening_plies: int,
             log_fh.close()
     if skipped:
         print(f"  ({skipped} game(s) taken from {log_path}; {pairs * 2 - skipped} played now)")
-    return summarize(a.name, b.name, wins, draws, losses, pair_scores)
+    return summarize(a.name, b.name, wins, draws, losses, pair_scores, endings)
 
 
 def pool_logs(paths: list[str]) -> dict:
@@ -212,6 +223,7 @@ def pool_logs(paths: list[str]) -> dict:
     seen: set[tuple[int, bool]] = set()
     specs: set[tuple[str, str]] = set()
     by_pair: dict[int, dict[bool, float]] = {}
+    endings: dict[str, list[int]] = {}
     for path in paths:
         for key, rec in _load_log(path).items():
             if key in seen:
@@ -226,17 +238,19 @@ def pool_logs(paths: list[str]) -> dict:
             else:
                 losses += 1; pts = 0.0
             by_pair.setdefault(rec["seed"], {})[rec["a_is_cho"]] = pts
+            endings.setdefault(rec.get("reason", "?"), [0, 0, 0])[0 if pts == 0.5 else (1 if pts == 1.0 else 2)] += 1
     if len(specs) > 1:
         print(f"  WARNING: pooling logs with different configurations: {sorted(specs)}")
     pair_scores = [sum(p.values()) for p in by_pair.values() if len(p) == 2]
     half = sum(1 for p in by_pair.values() if len(p) != 2)
     if half:
         print(f"  ({half} half-played pair(s) count in the score but not in the pair interval)")
-    return summarize("A", "B", wins, draws, losses, pair_scores or None)
+    return summarize("A", "B", wins, draws, losses, pair_scores or None, endings)
 
 
 def summarize(a_name: str, b_name: str, wins: int, draws: int, losses: int,
-              pair_scores: list[float] | None = None) -> dict:
+              pair_scores: list[float] | None = None,
+              endings: dict[str, list[int]] | None = None) -> dict:
     """Score, interval, elo and verdict.
 
     The two games of a colour-swapped pair share one opening, so they are not
@@ -286,10 +300,16 @@ def summarize(a_name: str, b_name: str, wins: int, draws: int, losses: int,
         print(f"  score {score * 100:.1f}%  (95% CI {lo * 100:.1f}%..{hi * 100:.1f}%)")
     print(f"  elo   {elo:+.0f}")
     print(f"  {verdict}")
+    if endings:
+        # [draws, A wins, A losses] per ending, so "won on points at the cap"
+        # cannot hide inside a plain score.
+        parts = [f"{k} {v[1]}-{v[2]}" + (f" ={v[0]}" if v[0] else "") for k, v in sorted(endings.items())]
+        print("  endings (A wins-losses): " + ", ".join(parts))
     return {
         "wins": wins, "draws": draws, "losses": losses, "games": played,
         "score": score, "ci": (lo, hi), "elo": elo, "verdict": verdict,
         "pairs": len(pair_scores) if pair_scores else 0,
+        "endings": endings or {},
     }
 
 

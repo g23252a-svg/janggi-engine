@@ -31,6 +31,8 @@ def test_every_finished_game_is_logged_as_it_finishes(tmp_path, capsys):
     assert len(lines) == 2
     assert {(r["seed"], r["a_is_cho"]) for r in lines} == {(7, True), (7, False)}
     assert all(r["winner"] in ("cho", "han", "draw") for r in lines)
+    assert all(r["reason"] in ("mate", "stalemate", "repetition", "no_move", "cap") for r in lines)
+    assert "endings (A wins-losses):" in capsys.readouterr().out
 
 
 def test_resume_counts_logged_games_and_plays_only_the_rest(tmp_path, capsys):
