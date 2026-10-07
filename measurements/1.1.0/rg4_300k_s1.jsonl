@@ -1,0 +1,1 @@
+{"seed": 20260812, "a_is_cho": true, "winner": "cho", "plies": 200, "reason": "cap", "a": "rootguard=4", "b": "", "budget": {"nodes": 300000, "time": null, "depth": 64}, "spent": {"a": {"nodes": 33921100, "moves": 97, "guard": 0}, "b": {"nodes": 28811896, "moves": 97, "guard": 0}}}

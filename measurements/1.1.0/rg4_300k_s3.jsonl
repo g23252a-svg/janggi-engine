@@ -1,1 +1,2 @@
 {"seed": 20260832, "a_is_cho": true, "winner": "han", "plies": 90, "reason": "mate", "a": "rootguard=4", "b": "", "budget": {"nodes": 300000, "time": null, "depth": 64}, "spent": {"a": {"nodes": 14390693, "moves": 42, "guard": 0}, "b": {"nodes": 10790316, "moves": 42, "guard": 0}}}
+{"seed": 20260832, "a_is_cho": false, "winner": "han", "plies": 90, "reason": "mate", "a": "rootguard=4", "b": "", "budget": {"nodes": 300000, "time": null, "depth": 64}, "spent": {"a": {"nodes": 14700075, "moves": 42, "guard": 0}, "b": {"nodes": 12300062, "moves": 42, "guard": 0}}}
