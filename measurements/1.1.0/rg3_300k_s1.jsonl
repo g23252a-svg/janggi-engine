@@ -1,1 +1,2 @@
 {"seed": 20260812, "a_is_cho": true, "winner": "cho", "plies": 183, "reason": "stalemate", "a": "rootguard=3", "b": "", "budget": {"nodes": 300000, "time": null, "depth": 64}}
+{"seed": 20260812, "a_is_cho": false, "winner": "cho", "plies": 179, "reason": "mate", "a": "rootguard=3", "b": "", "budget": {"nodes": 300000, "time": null, "depth": 64}}
