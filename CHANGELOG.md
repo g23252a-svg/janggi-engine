@@ -3,6 +3,25 @@
 Versions before 0.4.0 predate this file; `setup.py` sat at 0.3.0 through all
 three of the patches below, which is what 1.0.0's versioning work is about.
 
+## Unreleased — 1.1.0
+
+Every row below is a colour-swapped match at an equal 60k nodes per move,
+60 games over three 20-game shards with disjoint opening seeds, pooled with
+`python -m janggi.match --pool`.
+
+### Measured, not assumed
+
+| change | alone vs 1.0.0 | verdict |
+| --- | ---: | --- |
+| `histmalus` — bounded signed history (gravity + malus) | +33 =0 -27 of 60, 55.0%, +35 elo (CI 42.4..67.6) | not distinguishable from noise — **off by default**, code and flag kept |
+
+`histmalus` is the principled fix for the finding in the 1.0.0 correction below
+(the history "rescue" branch never fired because the running max was
+unreachable). It is more correct and it measures the same as the flaw it fixes.
+Three shards of 11-9 each. By this repository's own precedent — `improving`
+at 60.0% and null-move-off at 55.0% both went the same way — it does not ship
+on that number.
+
 ## 1.0.0 — versioned, and one search change that survived measurement
 
 Against the engine deployed before it (`2394b38`), both compiled, over 60
