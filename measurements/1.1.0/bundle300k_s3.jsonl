@@ -12,3 +12,4 @@
 {"seed": 20260837, "a_is_cho": false, "winner": "cho", "plies": 165, "a": "asp=0,rootguard=1,extbudget=4", "b": ""}
 {"seed": 20260838, "a_is_cho": true, "winner": "cho", "plies": 91, "a": "asp=0,rootguard=1,extbudget=4", "b": ""}
 {"seed": 20260838, "a_is_cho": false, "winner": "han", "plies": 94, "a": "asp=0,rootguard=1,extbudget=4", "b": ""}
+{"seed": 20260839, "a_is_cho": true, "winner": "han", "plies": 52, "a": "asp=0,rootguard=1,extbudget=4", "b": ""}
