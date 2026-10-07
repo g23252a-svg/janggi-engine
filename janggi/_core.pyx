@@ -1801,10 +1801,7 @@ cdef int _root_iteration(int* piece, int* side, int who, int depth,
                 # loss the guard has what it needs; if not, the redo starts
                 # from a real number instead of a bound. The cost is one
                 # extra root search that the redo was about to do anyway.
-                # Only the floor is removed: the ceiling stays at alpha, since the
-                # point is to learn whether this is a proven loss, not its exact
-                # value above alpha -- the redo will settle that if it runs.
-                score = -_negamax(piece, side, 3 - who, depth - 1, -a, MATE * 2, 1, 1, 1)
+                score = -_negamax(piece, side, 3 - who, depth - 1, -beta, MATE * 2, 1, 1, 1)
         else:
             score = -_negamax(piece, side, 3 - who, depth - 1, -a - 1, -a, 1, 0, 1)
             if score > a and score < beta and not g_timeout:
@@ -2016,20 +2013,15 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
                 # loss: one scored this depth if there is one, else the runner-
                 # up from the completed depth. In the lost game this is exactly
                 # the difference between (0,5,1,4) and a move that holds.
-                # Prefer a move this depth actually scored: a previous
-                # depth's number is a null-window bound and can belong to a
-                # move that is also lost but was never re-searched. Only if
-                # nothing was scored this depth fall back to those bounds.
+                # Preferring a move this depth had scored was tried and
+                # reverted: a null-window score from this depth is a bound as
+                # well, and a move that is actually lost can carry a higher
+                # bound than a holding move. Best non-proven-loss bound it is.
                 guard_idx = -1
                 guard_best = -MATE * 2
                 for gi in range(1, n_root):
-                    if (root_iter[gi] == depth and root_score[gi] > -MATE_BOUND
-                            and root_score[gi] > guard_best):
+                    if root_score[gi] > -MATE_BOUND and root_score[gi] > guard_best:
                         guard_best = root_score[gi]; guard_idx = gi
-                if guard_idx < 0:
-                    for gi in range(1, n_root):
-                        if root_score[gi] > -MATE_BOUND and root_score[gi] > guard_best:
-                            guard_best = root_score[gi]; guard_idx = gi
                 if guard_idx >= 0:
                     final_from = root_from[guard_idx]
                     final_to = root_to[guard_idx]
