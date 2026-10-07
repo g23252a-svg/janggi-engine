@@ -4,3 +4,6 @@
 {"seed": 20260853, "a_is_cho": false, "winner": "cho", "plies": 151, "a": "histmalus=1", "b": ""}
 {"seed": 20260854, "a_is_cho": true, "winner": "cho", "plies": 137, "a": "histmalus=1", "b": ""}
 {"seed": 20260854, "a_is_cho": false, "winner": "han", "plies": 148, "a": "histmalus=1", "b": ""}
+{"seed": 20260855, "a_is_cho": true, "winner": "han", "plies": 200, "a": "histmalus=1", "b": ""}
+{"seed": 20260855, "a_is_cho": false, "winner": "han", "plies": 136, "a": "histmalus=1", "b": ""}
+{"seed": 20260856, "a_is_cho": true, "winner": "han", "plies": 104, "a": "histmalus=1", "b": ""}
