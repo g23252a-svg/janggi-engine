@@ -141,11 +141,17 @@ def _load_log(path: str | None) -> dict[tuple[int, bool], dict]:
     if not path or not os.path.exists(path):
         return done
     with open(path, encoding="utf-8") as fh:
-        for line in fh:
+        for n, line in enumerate(fh, 1):
             line = line.strip()
             if not line:
                 continue
-            rec = json.loads(line)
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                # A process killed mid-write leaves a partial last line. That
+                # game is simply not finished; the log is still usable.
+                print(f"  WARNING: {path}:{n} is not valid JSON (partial write?); skipping that line")
+                continue
             done[(rec["seed"], rec["a_is_cho"])] = rec
     return done
 
@@ -165,6 +171,19 @@ def run_match(a: Config, b: Config, games: int, seed: int, opening_plies: int,
     wins = draws = losses = 0
     pairs = max(1, games // 2)
     done = _load_log(log_path) if resume else {}
+    # A log is only a checkpoint for the match it was written by. The budget
+    # and both configurations are recorded in every line; refuse to count a
+    # game played under anything else as if it were this match's.
+    budget = {"nodes": None if a.time_limit else a.nodes, "time": a.time_limit, "depth": a.depth}
+    for key, rec in list(done.items()):
+        same = (rec.get("a") == a.spec and rec.get("b") == b.spec
+                and rec.get("budget", budget) == budget)
+        if not same:
+            raise SystemExit(
+                f"--resume: {log_path} holds game {key} from a different match "
+                f"(a={rec.get('a')!r} b={rec.get('b')!r} budget={rec.get('budget')}); "
+                f"this run is a={a.spec!r} b={b.spec!r} budget={budget}. Use another --log."
+            )
     skipped = 0
     pair_scores: list[float] = []
     endings: dict[str, list[int]] = {}
@@ -188,7 +207,7 @@ def run_match(a: Config, b: Config, games: int, seed: int, opening_plies: int,
                         log_fh.write(json.dumps({
                             "seed": game_seed, "a_is_cho": a_is_cho,
                             "winner": winner, "plies": plies, "reason": reason,
-                            "a": a.spec, "b": b.spec,
+                            "a": a.spec, "b": b.spec, "budget": budget,
                         }) + "\n")
                         log_fh.flush()
                 if winner == "draw":
@@ -226,10 +245,10 @@ def pool_logs(paths: list[str]) -> dict:
     endings: dict[str, list[int]] = {}
     for path in paths:
         for key, rec in _load_log(path).items():
+            specs.add((rec.get("a", ""), rec.get("b", "")))
             if key in seen:
                 continue                     # the same game logged twice
             seen.add(key)
-            specs.add((rec.get("a", ""), rec.get("b", "")))
             a_side = "cho" if rec["a_is_cho"] else "han"
             if rec["winner"] == "draw":
                 draws += 1; pts = 0.5
@@ -274,10 +293,13 @@ def summarize(a_name: str, b_name: str, wins: int, draws: int, losses: int,
     lo_game, hi_game = score - 1.96 * stderr, score + 1.96 * stderr
     lo, hi = lo_game, hi_game
     pair_ci = None
-    if pair_scores:
+    if pair_scores and len(pair_scores) >= 2:
         n = len(pair_scores)
         mean = sum(pair_scores) / n            # A's points per pair, out of 2
-        pvar = sum((x - mean) ** 2 for x in pair_scores) / n
+        # Sample variance: a single pair, or every pair scoring the same, is
+        # not evidence of zero spread, and must not print a zero-width
+        # interval and call a 2-0 sweep "stronger".
+        pvar = sum((x - mean) ** 2 for x in pair_scores) / (n - 1)
         pse = math.sqrt(pvar / n)
         lo, hi = (mean - 1.96 * pse) / 2.0, (mean + 1.96 * pse) / 2.0
         pair_ci = (lo, hi)
@@ -285,8 +307,12 @@ def summarize(a_name: str, b_name: str, wins: int, draws: int, losses: int,
     # Clamp so a 2-0 run reports a finite number that survives json.dumps.
     clamped = min(max(score, 0.5 / max(played, 1)), 1.0 - 0.5 / max(played, 1))
     elo = -400.0 * math.log10(1.0 / clamped - 1.0)
+    # No verdict on a handful of games: a 2-0 has zero sample variance and
+    # would otherwise print a zero-width interval and "A is stronger".
+    too_few = played < 20 or (pair_scores is not None and len(pair_scores) < 10)
     verdict = (
-        "A is stronger" if lo > 0.5
+        "too few games for a verdict" if too_few
+        else "A is stronger" if lo > 0.5
         else "B is stronger" if hi < 0.5
         else "not distinguishable from noise"
     )

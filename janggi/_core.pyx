@@ -1996,6 +1996,10 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
                     final_from = root_from[guard_idx]
                     final_to = root_to[guard_idx]
                     final_cap = root_cap[guard_idx]
+                    # guard_best is the completed depth's root_score for that
+                    # move, which under PVS is a null-window BOUND, not an
+                    # exact score. The move is what matters here; the number
+                    # is the best the engine has and can overstate the move.
                     final_score = guard_best
             break
 
@@ -2101,14 +2105,25 @@ def core_see(int[::1] piece, int[::1] side, int fr, int fc, int tr, int tc):
     return _see(&piece[0], &side[0], fr, fc, tr, tc)
 
 
-def core_eval(int[::1] piece, int[::1] side, int base_ply, int version=1):
+def core_eval(int[::1] piece, int[::1] side, int base_ply, int version=1,
+              int soltab=0, int mob=0):
     """evaluate(board, include_mobility=False). version=1 is the original."""
-    global g_base_ply, h_top
-    g_base_ply = base_ply
-    h_top = 0
-    if version == 2:
-        return _evaluate2(&piece[0], &side[0])
-    return _evaluate(&piece[0], &side[0])
+    # The evaluator reads g_soltab / g_mob, which core_reset sets for a search.
+    # A direct evaluate() call must not inherit whatever the last search left
+    # there, so the knobs are explicit here and restored afterwards.
+    global g_soltab, g_mob
+    cdef int keep_soltab = g_soltab, keep_mob = g_mob
+    g_soltab = soltab; g_mob = mob
+    try:
+        global g_base_ply, h_top
+        g_base_ply = base_ply
+        h_top = 0
+        if version == 2:
+            return _evaluate2(&piece[0], &side[0])
+        return _evaluate(&piece[0], &side[0])
+    finally:
+        g_soltab = keep_soltab; g_mob = keep_mob
+
 
 
 cdef int MOBBUF[1024]

@@ -111,3 +111,43 @@ def test_the_deployed_search_is_node_identical():
         f"{engine.stats.total_nodes:,} nodes: the deployed-form search changed; "
         "a flag is not inert when off, or a default moved without its flag"
     )
+
+
+# The mate-in-1/2 prover sweep in test_tactics.py passes every ON form in
+# milliseconds -- including mthreat=1, which demonstrably hides a mate. Those
+# positions are too shallow to exercise these flags. This is the sweep that
+# can fail: the CHO-side proof of a 15-ply mate from a real game, under each
+# flag that could ever ship on.
+ON_FORMS = ["histmalus=1", "rootguard=1", "mthreat=2", "chkprune=1", "lmrcap=1",
+            "mob=2", "extbudget=4", "asp=0",
+            "asp=0,rootguard=1,extbudget=4",
+            "asp=0,rootguard=1,extbudget=4,mthreat=2"]
+# Flags this sweep has caught hiding the proof. mthreat=1 by the extension it
+# adds on the defending side; soltab=1 by re-valuing the soldiers that take
+# part in the mating net (CHO scores +2888 at 300k instead of mate). Both are
+# off, and this list is why they stay off until the proof survives them.
+HIDES_THE_PROOF = ["mthreat=1", "soltab=1"]
+
+
+@needs_core
+@pytest.mark.parametrize("spec", ON_FORMS)
+def test_no_shippable_flag_hides_the_fifteen_ply_mate(spec):
+    from janggi.board import Move
+    board = build(LOST_GAME_PLY_54)
+    board.make(Move(*FATAL))
+    engine = Engine(max_depth=30, options=SearchOptions.parse(spec + ",nodes=300000"))
+    _, score = engine.search(board, CHO, game_ply=54)
+    assert score > MATE_BOUND, f"{spec}: CHO scored {score} instead of proving the mate within 300k nodes"
+
+
+@needs_core
+@pytest.mark.parametrize("spec", HIDES_THE_PROOF)
+def test_the_flag_known_to_hide_the_proof_still_does(spec):
+    """If this ever passes, mthreat=1 has changed and must be re-measured
+    before anyone is tempted to turn it on."""
+    from janggi.board import Move
+    board = build(LOST_GAME_PLY_54)
+    board.make(Move(*FATAL))
+    engine = Engine(max_depth=30, options=SearchOptions.parse(spec + ",nodes=300000"))
+    _, score = engine.search(board, CHO, game_ply=54)
+    assert score <= MATE_BOUND, f"{spec} now proves the mate ({score}); re-measure it"

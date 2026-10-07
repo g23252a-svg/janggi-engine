@@ -102,11 +102,43 @@ def test_pool_warns_when_configurations_differ(tmp_path, capsys):
 
 # ------------------------------------------------------------ the interval
 def test_pair_interval_is_zero_width_when_every_pair_splits(capsys):
-    """Every pair 1-1: the opening decided nothing, A and B are level, and
-    there is no variance between pairs to put in the interval."""
+    """Every pair 1-1: A and B played the same game each time (the sample
+    variance over pairs is genuinely zero), and the interval says so."""
     res = match.summarize("A", "B", 10, 0, 10, pair_scores=[1.0] * 10)
     lo, hi = res["ci"]
     assert abs(lo - 0.5) < 1e-9 and abs(hi - 0.5) < 1e-9
+
+
+def test_one_pair_never_declares_a_winner(capsys):
+    res = match.summarize("A", "B", 2, 0, 0, pair_scores=[2.0])
+    assert res["verdict"] == "too few games for a verdict"
+    assert res["pairs"] == 1
+
+
+def test_resume_refuses_a_log_from_a_different_match(tmp_path, capsys):
+    log = tmp_path / "m.jsonl"
+    log.write_text(json.dumps({"seed": 7, "a_is_cho": True, "winner": "cho", "plies": 1, "reason": "mate",
+                               "a": "mob=2", "b": "", "budget": {"nodes": 300, "time": None, "depth": 3}}) + "\n")
+    with pytest.raises(SystemExit, match="different match"):
+        match.run_match(tiny(), tiny("lmr=0"), games=2, seed=7, opening_plies=4,
+                        log_path=str(log), resume=True)
+
+
+def test_a_truncated_last_line_is_skipped_not_fatal(tmp_path, capsys):
+    log = tmp_path / "m.jsonl"
+    good = json.dumps({"seed": 7, "a_is_cho": True, "winner": "cho", "plies": 1, "reason": "mate", "a": "", "b": "x=0"})
+    log.write_text(good + "\n" + '{"seed": 7, "a_is_cho": false, "winner": "ch')
+    done = match._load_log(str(log))
+    assert list(done) == [(7, True)]
+    assert "partial write" in capsys.readouterr().out
+
+
+def test_pool_warns_on_mixed_configurations_even_when_seeds_overlap(tmp_path, capsys):
+    s1 = tmp_path / "s1.jsonl"; s2 = tmp_path / "s2.jsonl"
+    s1.write_text(json.dumps({"seed": 1, "a_is_cho": True, "winner": "cho", "plies": 1, "a": "", "b": "x=0"}) + "\n")
+    s2.write_text(json.dumps({"seed": 1, "a_is_cho": True, "winner": "cho", "plies": 1, "a": "", "b": "y=0"}) + "\n")
+    match.pool_logs([str(s1), str(s2)])
+    assert "different configurations" in capsys.readouterr().out
 
 
 def test_pair_interval_is_wider_than_per_game_when_pairs_are_decided_by_the_opening(capsys):
