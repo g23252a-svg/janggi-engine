@@ -8,3 +8,7 @@
 {"seed": 20260825, "a_is_cho": false, "winner": "han", "plies": 60, "reason": "mate", "a": "rootguard=1", "b": "", "budget": {"nodes": 60000, "time": null, "depth": 64}}
 {"seed": 20260826, "a_is_cho": true, "winner": "cho", "plies": 167, "reason": "mate", "a": "rootguard=1", "b": "", "budget": {"nodes": 60000, "time": null, "depth": 64}}
 {"seed": 20260826, "a_is_cho": false, "winner": "cho", "plies": 149, "reason": "mate", "a": "rootguard=1", "b": "", "budget": {"nodes": 60000, "time": null, "depth": 64}}
+{"seed": 20260827, "a_is_cho": true, "winner": "cho", "plies": 191, "reason": "stalemate", "a": "rootguard=1", "b": "", "budget": {"nodes": 60000, "time": null, "depth": 64}}
+{"seed": 20260827, "a_is_cho": false, "winner": "cho", "plies": 141, "reason": "mate", "a": "rootguard=1", "b": "", "budget": {"nodes": 60000, "time": null, "depth": 64}}
+{"seed": 20260828, "a_is_cho": true, "winner": "cho", "plies": 85, "reason": "repetition", "a": "rootguard=1", "b": "", "budget": {"nodes": 60000, "time": null, "depth": 64}}
+{"seed": 20260828, "a_is_cho": false, "winner": "cho", "plies": 61, "reason": "repetition", "a": "rootguard=1", "b": "", "budget": {"nodes": 60000, "time": null, "depth": 64}}
