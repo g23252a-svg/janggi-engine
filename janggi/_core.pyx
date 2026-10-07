@@ -1198,7 +1198,9 @@ cdef int g_use_hist_malus = 0
 # Three mate-safety guards, all off by default until measured. Motivated by a
 # real lost game (tests/test_regression_games.py): at the UI's budget the
 # engine walked into a 15-ply mate while two moves held.
-cdef int g_use_root_guard = 0   # never play a root move this depth has proven lost
+cdef int g_use_root_guard = 0   # 0 off; 1 guard + exact re-search on every PV fail-low;
+                                # 2 guard + re-search only past 70% of the budget
+cdef double g_search_start = 0.0
 cdef int g_use_mate_threat = 0  # mate-threat mode: 0 off; 1 extend + gate pruning; 2 gate pruning only.
                                 # Mode 1 hides the attacker's own proof (the extension on the defending
                                 # side grows the attacker's tree past the budget: +2072 instead of mate
@@ -1252,6 +1254,16 @@ cdef void _init_lmr():
                 LMRTAB[d][m] = <int>red
 
 _init_lmr()
+
+
+cdef int _late_in_budget():
+    """Past 70% of the node or time budget: an aspiration redo of this depth
+    is unlikely to finish, so a proof found now is the last chance to use it."""
+    if g_node_limit > 0 and (g_nodes + g_qnodes) * 10 >= g_node_limit * 7:
+        return 1
+    if g_deadline > 0.0 and g_search_start > 0.0:
+        return _pytime.time() >= g_search_start + 0.7 * (g_deadline - g_search_start)
+    return 0
 
 
 cdef int _time_up():
@@ -1777,8 +1789,9 @@ cdef int _root_iteration(int* piece, int* side, int who, int depth,
         _make(piece, side, fr, fc, tr, tc)
         if i == 0 or not g_use_pvs:
             score = -_negamax(piece, side, 3 - who, depth - 1, -beta, -a, 1, 1, 1)
-            if (i == 0 and g_use_root_guard and score <= a and a > -MATE * 2
-                    and not g_timeout):
+            if (i == 0 and score <= a and a > -MATE * 2 and not g_timeout
+                    and (g_use_root_guard == 1
+                         or (g_use_root_guard == 2 and _late_in_budget()))):
                 # rootguard, under an aspiration window. The PV move just
                 # failed low, and a fail-low is a BOUND: it says "worse than
                 # alpha", never "lost by force", so the guard could not act on
@@ -1788,7 +1801,10 @@ cdef int _root_iteration(int* piece, int* side, int who, int depth,
                 # loss the guard has what it needs; if not, the redo starts
                 # from a real number instead of a bound. The cost is one
                 # extra root search that the redo was about to do anyway.
-                score = -_negamax(piece, side, 3 - who, depth - 1, -beta, MATE * 2, 1, 1, 1)
+                # Only the floor is removed: the ceiling stays at alpha, since the
+                # point is to learn whether this is a proven loss, not its exact
+                # value above alpha -- the redo will settle that if it runs.
+                score = -_negamax(piece, side, 3 - who, depth - 1, -a, MATE * 2, 1, 1, 1)
         else:
             score = -_negamax(piece, side, 3 - who, depth - 1, -a - 1, -a, 1, 0, 1)
             if score > a and score < beta and not g_timeout:
@@ -1884,8 +1900,9 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
     Python) is what makes aspiration windows, root move ordering carry-over
     and a real principal variation possible.
     """
-    global g_deadline, h_top, g_base_ply, n_root, n_game_hash, g_timeout, g_ext
+    global g_deadline, h_top, g_base_ply, n_root, n_game_hash, g_timeout, g_ext, g_search_start
     g_deadline = deadline
+    g_search_start = _pytime.time()
     g_base_ply = base_ply
     g_timeout = 0
     h_top = 0
@@ -1999,11 +2016,20 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
                 # loss: one scored this depth if there is one, else the runner-
                 # up from the completed depth. In the lost game this is exactly
                 # the difference between (0,5,1,4) and a move that holds.
+                # Prefer a move this depth actually scored: a previous
+                # depth's number is a null-window bound and can belong to a
+                # move that is also lost but was never re-searched. Only if
+                # nothing was scored this depth fall back to those bounds.
                 guard_idx = -1
                 guard_best = -MATE * 2
                 for gi in range(1, n_root):
-                    if root_score[gi] > -MATE_BOUND and root_score[gi] > guard_best:
+                    if (root_iter[gi] == depth and root_score[gi] > -MATE_BOUND
+                            and root_score[gi] > guard_best):
                         guard_best = root_score[gi]; guard_idx = gi
+                if guard_idx < 0:
+                    for gi in range(1, n_root):
+                        if root_score[gi] > -MATE_BOUND and root_score[gi] > guard_best:
+                            guard_best = root_score[gi]; guard_idx = gi
                 if guard_idx >= 0:
                     final_from = root_from[guard_idx]
                     final_to = root_to[guard_idx]
