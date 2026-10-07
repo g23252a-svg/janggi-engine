@@ -119,6 +119,7 @@ class SearchOptions:
     node_limit: int = 0             # 0 = unlimited; used for reproducible A/B
     eval_version: int = 2           # 1 = original evaluator, 2 = Janggi-aware
     use_hist_lmr: bool = True       # scale the late-move reduction by move history
+    use_hist_malus: bool = False    # bounded signed history: gravity + malus for failed quiets
 
     _ALIASES = {
         "tt": "use_tt", "lmr": "use_lmr", "ext": "use_ext", "nmp": "use_nmp",
@@ -128,6 +129,7 @@ class SearchOptions:
         "extbudget": "ext_budget", "nodes": "node_limit",
         "eval": "eval_version",
         "histlmr": "use_hist_lmr",
+        "histmalus": "use_hist_malus",
     }
 
     @classmethod
@@ -275,6 +277,7 @@ class Engine:
             opts.node_limit,
             opts.eval_version,
             1 if opts.use_hist_lmr else 0,
+            1 if opts.use_hist_malus else 0,
         )
         deadline = (time.time() + self.time_limit) if self.time_limit else 0.0
         frm, to, cap, score, depth, pv = core_search(

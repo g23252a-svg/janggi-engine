@@ -1171,6 +1171,17 @@ cdef int g_use_hist_lmr = 1  # scale the late-move reduction by move history
 # move in the top quarter of what we have seen" instead of comparing against a
 # constant that drifts in meaning as histh accumulates.
 cdef int g_hist_max = 0
+# Bounded, signed history ("gravity" + malus). Off: histh grows without bound and
+# only the cutting move is credited. On: every update is h += b - h*|b|/HMAX, so
+# values live in (-HMAX, HMAX) and a fixed fraction of HMAX means the same thing
+# at every depth and time limit; and the quiet moves that were searched before
+# the cut and failed are debited, so "tried and did nothing" is distinguishable
+# from "never tried". Motivation: counters on 1.0.0 showed the histlmr rescue
+# branch (top quarter of the running max) firing on 0.2-0.3% of eligible moves
+# -- the running max is a handful of moves with hundreds of cutoffs, and 75% of
+# that is out of reach for everything else.
+cdef int g_use_hist_malus = 0
+DEF HMAX = 16384
 
 # Repetition: hashes along the current search line plus the hashes of game
 # positions since the last capture, which Python supplies.
@@ -1485,6 +1496,10 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
         else:
             bucket = 2
             sub = histh[(who-1)*8100 + mt]
+            if g_use_hist_malus:
+                sub += HMAX            # signed in (-HMAX, HMAX) -> (0, 2*HMAX)
+            if sub < 0:
+                sub = 0
             if sub > 4194303:
                 sub = 4194303
         k = ((<long long>bucket) << 40) + <long long>sub
@@ -1515,6 +1530,9 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
     cdef int best_score = -MATE * 2
     cdef int best_move = -1
     cdef int reduce, gives_check, new_depth, quiets, di, mi, hv
+    cdef int tried_q[204]
+    cdef int n_tried = 0
+    cdef int hb, hj, hidx
     cdef int fut_margin = 0
     cdef int played = 0          # legal moves actually searched at this node
     quiets = 0
@@ -1545,6 +1563,9 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
             continue
         if cap == 0:
             quiets += 1
+            if g_use_hist_malus and n_tried < 204:
+                tried_q[n_tried] = mt
+                n_tried += 1
         gives_check = _in_check(piece, side, 3 - who)
         new_depth = depth - 1 + extend
 
@@ -1569,7 +1590,14 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
                 # different again at another time limit. "In the top quarter of
                 # what this search has seen" means the same thing throughout.
                 hv = histh[(who-1)*8100 + mt]
-                if hv == 0:
+                if g_use_hist_malus:
+                    # Bounded scheme: <= 0 is "never cut, or tried and failed";
+                    # >= HMAX/2 is a move that keeps cutting wherever it appears.
+                    if hv <= 0:
+                        reduce += 1
+                    elif hv >= HMAX / 2:
+                        reduce -= 1
+                elif hv == 0:
                     reduce += 1
                 elif g_hist_max > 0 and hv * 4 >= g_hist_max * 3:
                     reduce -= 1
@@ -1612,9 +1640,22 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
                 if killer1[ply] != mt:
                     killer2[ply] = killer1[ply]
                     killer1[ply] = mt
-                histh[(who-1)*8100 + mt] += depth * depth
-                if histh[(who-1)*8100 + mt] > g_hist_max:
-                    g_hist_max = histh[(who-1)*8100 + mt]
+                if g_use_hist_malus:
+                    hb = depth * depth * 2
+                    if hb > 1500:
+                        hb = 1500
+                    hidx = (who-1)*8100 + mt
+                    histh[hidx] += hb - histh[hidx] * hb / HMAX
+                    # Debit the quiet moves searched before this one at this
+                    # node: they had their chance at full depth and did not cut.
+                    for hj in range(n_tried):
+                        if tried_q[hj] != mt:
+                            hidx = (who-1)*8100 + tried_q[hj]
+                            histh[hidx] -= hb + histh[hidx] * hb / HMAX
+                else:
+                    histh[(who-1)*8100 + mt] += depth * depth
+                    if histh[(who-1)*8100 + mt] > g_hist_max:
+                        g_hist_max = histh[(who-1)*8100 + mt]
                 if prev_mt >= 0:
                     counterm[(who-1)*8100 + prev_mt] = mt
             break
@@ -1702,12 +1743,12 @@ def core_reset(int max_depth, int ext_budget, int use_tt=1, int use_lmr=1,
                int use_ext=1, int use_nmp=1, int use_pvs=1, int use_fut=1,
                int use_lmp=1, int use_asp=1, int use_rep=1,
                long long node_limit=0, int eval_version=2,
-               int use_hist_lmr=1):
+               int use_hist_lmr=1, int use_hist_malus=0):
     """Reset TT / killers / history / stats for a fresh Engine.search()."""
     global g_nodes, g_qnodes, g_tthits, g_timeout, g_ext, g_maxdepth
     global g_use_tt, g_use_lmr, g_use_ext, g_use_nmp, g_use_pvs
     global g_use_fut, g_use_lmp, g_use_asp, g_use_rep, g_node_limit, n_game_hash
-    global g_eval_ver, g_use_hist_lmr, g_hist_max
+    global g_eval_ver, g_use_hist_lmr, g_hist_max, g_use_hist_malus
     cdef int i
     for i in range(TT_SIZE):
         tt_flag[i] = -1
@@ -1729,6 +1770,7 @@ def core_reset(int max_depth, int ext_budget, int use_tt=1, int use_lmr=1,
     g_node_limit = node_limit
     g_eval_ver = eval_version
     g_use_hist_lmr = use_hist_lmr
+    g_use_hist_malus = use_hist_malus
     g_hist_max = 0
     n_game_hash = 0
 

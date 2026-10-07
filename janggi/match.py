@@ -24,7 +24,9 @@ Design notes that matter for the numbers being meaningful:
 from __future__ import annotations
 
 import argparse
+import json
 import math
+import os
 import random
 from dataclasses import dataclass
 
@@ -124,30 +126,104 @@ def random_opening(seed: int, plies: int) -> tuple[tuple[str, str], list[Move]]:
     return start, moves
 
 
-def run_match(a: Config, b: Config, games: int, seed: int, opening_plies: int) -> dict:
+def _load_log(path: str | None) -> dict[tuple[int, bool], dict]:
+    """Finished games from an earlier run of the same match, keyed by what
+    identifies a game: the opening seed and which side A took."""
+    done: dict[tuple[int, bool], dict] = {}
+    if not path or not os.path.exists(path):
+        return done
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            rec = json.loads(line)
+            done[(rec["seed"], rec["a_is_cho"])] = rec
+    return done
+
+
+def run_match(a: Config, b: Config, games: int, seed: int, opening_plies: int,
+              log_path: str | None = None, resume: bool = False) -> dict:
+    """Play the match. With ``log_path`` every finished game is appended as one
+    JSON line, and with ``resume`` games already in that log are counted and
+    skipped -- so a run killed at game 19 of 60 continues from game 20 instead
+    of starting over. A game is identified by its opening seed and A's colour,
+    so the same command line resumes the same match and nothing else; a
+    different ``--seed`` or ``--games`` is a different match and the log is
+    simply added to.
+
+    The box that runs these gets reclaimed between sessions; two 60-game runs
+    died mid-way with no checkpoint before this existed."""
     wins = draws = losses = 0
     pairs = max(1, games // 2)
-    for pair in range(pairs):
-        start, opening = random_opening(seed + pair, opening_plies)
-        for a_is_cho in (True, False):
-            cho_cfg, han_cfg = (a, b) if a_is_cho else (b, a)
-            winner, plies = play_game(cho_cfg, han_cfg, opening, start)
-            a_side = "cho" if a_is_cho else "han"
-            if winner == "draw":
+    done = _load_log(log_path) if resume else {}
+    skipped = 0
+    log_fh = open(log_path, "a", encoding="utf-8") if log_path else None
+    try:
+        for pair in range(pairs):
+            game_seed = seed + pair
+            start, opening = random_opening(game_seed, opening_plies)
+            for a_is_cho in (True, False):
+                a_side = "cho" if a_is_cho else "han"
+                rec = done.get((game_seed, a_is_cho))
+                if rec is not None:
+                    winner, plies = rec["winner"], rec["plies"]
+                    skipped += 1
+                else:
+                    cho_cfg, han_cfg = (a, b) if a_is_cho else (b, a)
+                    winner, plies = play_game(cho_cfg, han_cfg, opening, start)
+                    if log_fh is not None:
+                        log_fh.write(json.dumps({
+                            "seed": game_seed, "a_is_cho": a_is_cho,
+                            "winner": winner, "plies": plies,
+                            "a": a.spec, "b": b.spec,
+                        }) + "\n")
+                        log_fh.flush()
+                if winner == "draw":
+                    draws += 1
+                elif winner == a_side:
+                    wins += 1
+                else:
+                    losses += 1
+                played = wins + draws + losses
+                score = (wins + 0.5 * draws) / played
+                tag = " (from log)" if rec is not None else ""
+                print(
+                    f"  game {played}/{pairs * 2}: {a.name} as {a_side} -> {winner} "
+                    f"({plies} plies) | W/D/L {wins}/{draws}/{losses} "
+                    f"score {score * 100:.1f}%{tag}",
+                    flush=True,
+                )
+    finally:
+        if log_fh is not None:
+            log_fh.close()
+    if skipped:
+        print(f"  ({skipped} game(s) taken from {log_path}; {pairs * 2 - skipped} played now)")
+    return summarize(a.name, b.name, wins, draws, losses)
+
+
+def pool_logs(paths: list[str]) -> dict:
+    """One summary over several game logs -- shards of one match run in
+    parallel with different --seed ranges, or a match resumed across runs."""
+    wins = draws = losses = 0
+    seen: set[tuple[int, bool]] = set()
+    specs: set[tuple[str, str]] = set()
+    for path in paths:
+        for key, rec in _load_log(path).items():
+            if key in seen:
+                continue                     # the same game logged twice
+            seen.add(key)
+            specs.add((rec.get("a", ""), rec.get("b", "")))
+            a_side = "cho" if rec["a_is_cho"] else "han"
+            if rec["winner"] == "draw":
                 draws += 1
-            elif winner == a_side:
+            elif rec["winner"] == a_side:
                 wins += 1
             else:
                 losses += 1
-            played = wins + draws + losses
-            score = (wins + 0.5 * draws) / played
-            print(
-                f"  game {played}/{pairs * 2}: {a.name} as {a_side} -> {winner} "
-                f"({plies} plies) | W/D/L {wins}/{draws}/{losses} "
-                f"score {score * 100:.1f}%",
-                flush=True,
-            )
-    return summarize(a.name, b.name, wins, draws, losses)
+    if len(specs) > 1:
+        print(f"  WARNING: pooling logs with different configurations: {sorted(specs)}")
+    return summarize("A", "B", wins, draws, losses)
 
 
 def summarize(a_name: str, b_name: str, wins: int, draws: int, losses: int) -> dict:
@@ -196,14 +272,22 @@ def main() -> None:
     ap.add_argument("--b", default="", help="search options for B")
     ap.add_argument("--seed", type=int, default=20260812)
     ap.add_argument("--opening-plies", type=int, default=6)
+    ap.add_argument("--log", default=None, help="append one JSON line per finished game here")
+    ap.add_argument("--resume", action="store_true", help="count and skip games already in --log")
+    ap.add_argument("--pool", nargs="+", metavar="LOG", default=None,
+                    help="summarize these game logs together instead of playing")
     args = ap.parse_args()
+
+    if args.pool:
+        pool_logs(args.pool)
+        return
 
     a = Config("A", args.depth_a or args.depth, args.nodes_a or args.nodes, args.time, args.a)
     b = Config("B", args.depth_b or args.depth, args.nodes_b or args.nodes, args.time, args.b)
     budget = f"{args.time}s/move" if args.time else f"{args.nodes} nodes/move"
     print(f"A: depth<={a.depth} {budget} opts={a.spec or 'default'}")
     print(f"B: depth<={b.depth} {budget} opts={b.spec or 'default'}")
-    run_match(a, b, args.games, args.seed, args.opening_plies)
+    run_match(a, b, args.games, args.seed, args.opening_plies, args.log, args.resume)
 
 
 if __name__ == "__main__":
