@@ -14,22 +14,23 @@ Every row below is a colour-swapped match at an equal 60k nodes per move,
 | change | alone vs 1.0.0 | verdict |
 | --- | ---: | --- |
 | `histmalus` — bounded signed history (gravity + malus) | +33 =0 -27 of 60, 55.0%, +35 elo (CI 42.4..67.6) | not distinguishable from noise — **off by default**, code and flag kept |
-| `mthreat` — a null-move fail-low with a mate score extends and disables margin pruning | +30 =0 -30 of 60, **50.0%**, 0 elo (CI 37.3..62.7) | **ships** — a defect fix at zero measured cost |
+| `mthreat=1` — a null-move fail-low with a mate score extends and disables margin pruning | +30 =0 -30 of 60, 50.0% — but 17 of 30 pairs were the **same game** (inert at 60k) | **does not ship**: it hides the CHO-side mate proof (see below) |
 
 `histmalus` is the principled fix for the finding in the 1.0.0 correction below
 (the history "rescue" branch never fired because the running max was
 unreachable). It is more correct and it measures the same as the flaw it fixes.
-`mthreat` is judged by a different rule, because it is not a strength change
-but the fix for the lost game in `tests/test_regression_games.py`. At the UI's
-budget it holds the position the deployed engine loses; its cost is what the
-match measures, and that cost is nothing — three shards of exactly 10-10. A
-null-move search that fails low with a mate score means "we passed and got
-mated"; passing is a legal move in Janggi, so that is a literal threat on the
-board. The node extends one ply (outside the check-extension budget) and does
-not margin-prune its quiet moves. 289 such fail-lows were being ignored in one
-search of that position. Its default flips to on in the release commit, so
-that `""` keeps meaning "the deployed engine" for every other match in this
-campaign.
+`mthreat=1` was recorded here as shipping on that 30-30, and that was wrong
+twice over. First, the match could not have said anything: at 60k nodes the
+null-move search almost never fails low with a mate score, so in 17 of the 30
+colour-swapped pairs A and B played the identical game. Second, and decisive,
+the design review checked the half of the regression contract the verdict
+had not: once the fatal move is on the board, CHO must prove the mate.
+Deployed does, in 206k nodes. With `mthreat=1` CHO scores +2072 at 300k
+nodes and never proves it — the extension it adds on the defending side
+grows the attacker's tree past the budget. Flipping it on would have turned
+`test_the_mate_after_the_fatal_move_is_seen_quickly` red. It stays off. A
+gate-only form (`mthreat=2`: no extension, only the pruning gate) is being
+tested against that proof before it is measured at all.
 
 Three shards of 11-9 each. By this repository's own precedent — `improving`
 at 60.0% and null-move-off at 55.0% both went the same way — it does not ship
