@@ -51,19 +51,43 @@ LOST_GAME_PLY_54 = [
 ]
 
 FATAL = (0, 5, 1, 4)
+# The moves that actually hold: 차 (2,1)->(8,1) at about -3200 and 사 (0,5)->(1,5)
+# at about -3650. Everything else is mate -- including 차 (2,1)->(3,1), which a
+# weaker version of this test (asserting only "not FATAL") let through.
+HOLDS = {(2, 1, 8, 1), (0, 5, 1, 5)}
+# The '표준' tier of the web UI searches for 3.5 s, which is about one million
+# nodes on the deployment. A test that passes at three million nodes while the
+# UI still plays the mate is not testing the failure that happened.
+SHIPPING_BUDGET = 1_000_000
 
-
-@pytest.mark.skipif(
+needs_core = pytest.mark.skipif(
     os.environ.get("JANGGI_NO_ACCEL") == "1",
     reason="needs the compiled core to reach this depth in a bounded node count",
 )
+
+
+@needs_core
 def test_does_not_walk_into_the_mate_that_lost_a_real_game():
     board = build(LOST_GAME_PLY_54)
-    engine = Engine(max_depth=30, options=SearchOptions(node_limit=3_000_000))
+    engine = Engine(max_depth=30, options=SearchOptions(node_limit=SHIPPING_BUDGET))
     move, score = engine.search(board, HAN, game_ply=53)
     assert move is not None
-    assert move.as_tuple() != FATAL, (
-        "played the move that lost the game: this position is bad for HAN but "
-        "not lost, and this move is mate"
+    assert move.as_tuple() in HOLDS, (
+        f"played {move.as_tuple()} at the UI's budget; the only moves that hold "
+        f"are {sorted(HOLDS)} and this one loses"
     )
     assert score > -MATE_BOUND, "HAN is worse here but should not be evaluated as mated"
+
+
+@needs_core
+def test_the_mate_after_the_fatal_move_is_seen_quickly():
+    """The other half of the contract: once the fatal move is on the board the
+    engine (as CHO) must prove the mate fast. Today it does in ~200k nodes; a
+    future extension or pruning change that hides it should fail here loudly
+    rather than reappear as a lost game."""
+    from janggi.board import Move
+    board = build(LOST_GAME_PLY_54)
+    board.make(Move(*FATAL))
+    engine = Engine(max_depth=30, options=SearchOptions(node_limit=300_000))
+    _, score = engine.search(board, CHO, game_ply=54)
+    assert score > MATE_BOUND, f"CHO should see the forced mate; scored {score}"

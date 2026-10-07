@@ -1181,6 +1181,13 @@ cdef int g_hist_max = 0
 # -- the running max is a handful of moves with hundreds of cutoffs, and 75% of
 # that is out of reach for everything else.
 cdef int g_use_hist_malus = 0
+# Three mate-safety guards, all off by default until measured. Motivated by a
+# real lost game (tests/test_regression_games.py): at the UI's budget the
+# engine walked into a 15-ply mate while two moves held.
+cdef int g_use_root_guard = 0   # never play a root move this depth has proven lost
+cdef int g_use_mate_threat = 0  # a null-move fail-low with a mate score is a threat: extend, do not prune
+cdef int g_use_chk_prune = 0    # never futility/LMP-prune a move that gives check
+cdef int root_iter[204]         # the depth at which root_score[i] was last written
 DEF HMAX = 16384
 
 # Repetition: hashes along the current search line plus the hashes of game
@@ -1416,6 +1423,7 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
     cdef int in_chk = _in_check(piece, side, who)
     cdef int static_eval = 0
     cdef int R, score
+    cdef int mate_threat = 0
 
     if not in_chk:
         static_eval = _eval_for(piece, side, who)
@@ -1449,6 +1457,13 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
                 if score > MATE_BOUND:
                     score = beta
                 return score
+            elif g_use_mate_threat and score < -MATE_BOUND:
+                # We passed and got mated. Passing is a legal move in Janggi, so
+                # this is a literal threat on the board, not a chess-style
+                # heuristic: the quiet moves here are the only things standing
+                # between us and that mate, and pruning them by margin is how
+                # the engine walked into one in a real game.
+                mate_threat = 1
 
     cdef int* buf = &MBUF[ply * 1024]
     cdef int n = _gen_pseudo(piece, side, who, buf)
@@ -1526,10 +1541,13 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
     if g_use_ext and g_ext > 0 and in_chk:
         extend = 1
         g_ext -= 1
+    cdef int budgeted_ext = extend      # only this one is given back below
+    if mate_threat and extend == 0:
+        extend = 1
 
     cdef int best_score = -MATE * 2
     cdef int best_move = -1
-    cdef int reduce, gives_check, new_depth, quiets, di, mi, hv
+    cdef int reduce, gives_check, new_depth, quiets, di, mi, hv, would_prune
     cdef int tried_q[204]
     cdef int n_tried = 0
     cdef int hb, hj, hidx
@@ -1544,29 +1562,40 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
         fr = buf[m*5]; fc = buf[m*5+1]; tr = buf[m*5+2]; tc = buf[m*5+3]; cap = buf[m*5+4]
         mt = (fr*COLS+fc)*90 + (tr*COLS+tc)
 
-        if cap == 0 and best_move >= 0 and not in_chk and not is_pv:
+        would_prune = 0
+        if cap == 0 and best_move >= 0 and not in_chk and not is_pv and not mate_threat:
             # Late-move pruning: deep in a bad-looking quiet list, stop looking.
             if (g_use_lmp and depth <= 4 and best_score > -MATE_BOUND
                     and quiets >= 4 + depth * depth):
-                quiets += 1
-                continue
+                would_prune = 1
             # Futility: this quiet move cannot plausibly reach alpha.
-            if (fut_margin != 0 and fut_margin <= alpha
+            elif (fut_margin != 0 and fut_margin <= alpha
                     and best_score > -MATE_BOUND):
-                quiets += 1
-                continue
+                would_prune = 1
+        if would_prune and not g_use_chk_prune:
+            quiets += 1
+            continue
 
         _make(piece, side, fr, fc, tr, tc)
         # Now that the move is on the board, is it even legal?
         if _in_check(piece, side, who):
             _unmake(piece, side)
             continue
+        gives_check = _in_check(piece, side, 3 - who)
+        if would_prune:
+            # chkprune: the decision was taken before the move was on the board,
+            # so whether it gives check was unknown. A checking move is never a
+            # "quiet move that cannot reach alpha" -- 1,477 mate-in-one moves
+            # were pruned this way in one search of the lost-game position.
+            if not gives_check:
+                _unmake(piece, side)
+                quiets += 1
+                continue
         if cap == 0:
             quiets += 1
             if g_use_hist_malus and n_tried < 204:
                 tried_q[n_tried] = mt
                 n_tried += 1
-        gives_check = _in_check(piece, side, 3 - who)
         new_depth = depth - 1 + extend
 
         reduce = 0
@@ -1627,7 +1656,7 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
         played += 1
 
         if g_timeout:
-            if extend:
+            if budgeted_ext:
                 g_ext += 1
             return 0
         if score > best_score:
@@ -1660,7 +1689,7 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
                     counterm[(who-1)*8100 + prev_mt] = mt
             break
 
-    if extend:
+    if budgeted_ext:
         g_ext += 1
 
     if played == 0:
@@ -1714,6 +1743,7 @@ cdef int _root_iteration(int* piece, int* side, int who, int depth,
             # whether a partial iteration may replace the previous best.
             return best
         root_score[i] = score
+        root_iter[i] = depth
         if score > best:
             best = score
             best_idx[0] = i
@@ -1743,12 +1773,14 @@ def core_reset(int max_depth, int ext_budget, int use_tt=1, int use_lmr=1,
                int use_ext=1, int use_nmp=1, int use_pvs=1, int use_fut=1,
                int use_lmp=1, int use_asp=1, int use_rep=1,
                long long node_limit=0, int eval_version=2,
-               int use_hist_lmr=1, int use_hist_malus=0):
+               int use_hist_lmr=1, int use_hist_malus=0,
+               int use_root_guard=0, int use_mate_threat=0, int use_chk_prune=0):
     """Reset TT / killers / history / stats for a fresh Engine.search()."""
     global g_nodes, g_qnodes, g_tthits, g_timeout, g_ext, g_maxdepth
     global g_use_tt, g_use_lmr, g_use_ext, g_use_nmp, g_use_pvs
     global g_use_fut, g_use_lmp, g_use_asp, g_use_rep, g_node_limit, n_game_hash
     global g_eval_ver, g_use_hist_lmr, g_hist_max, g_use_hist_malus
+    global g_use_root_guard, g_use_mate_threat, g_use_chk_prune
     cdef int i
     for i in range(TT_SIZE):
         tt_flag[i] = -1
@@ -1771,6 +1803,11 @@ def core_reset(int max_depth, int ext_budget, int use_tt=1, int use_lmr=1,
     g_eval_ver = eval_version
     g_use_hist_lmr = use_hist_lmr
     g_use_hist_malus = use_hist_malus
+    g_use_root_guard = use_root_guard
+    g_use_mate_threat = use_mate_threat
+    g_use_chk_prune = use_chk_prune
+    for i in range(204):
+        root_iter[i] = 0
     g_hist_max = 0
     n_game_hash = 0
 
@@ -1852,6 +1889,7 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
     _sort_root()
 
     cdef int depth, best_idx, score, alpha, beta, window
+    cdef int guard_idx, guard_best, gi
     cdef int final_from = root_from[0], final_to = root_to[0]
     cdef int final_cap = root_cap[0], final_score = 0, depth_done = 0
     cdef int ext_budget = g_ext
@@ -1891,6 +1929,26 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
                 final_to = root_to[best_idx]
                 final_cap = root_cap[best_idx]
                 final_score = score
+            elif (g_use_root_guard and depth_done > 0 and n_root > 1
+                    and root_iter[0] == depth and root_score[0] < -MATE_BOUND):
+                # rootguard. The move we were about to play (index 0 after the
+                # last sort) was re-searched in this unfinished iteration and
+                # proven to lose by force. That is a proof, not a bound, and
+                # the old rule above threw it away because no *better* move
+                # had been found yet. Play the best move that is not a proven
+                # loss: one scored this depth if there is one, else the runner-
+                # up from the completed depth. In the lost game this is exactly
+                # the difference between (0,5,1,4) and a move that holds.
+                guard_idx = -1
+                guard_best = -MATE * 2
+                for gi in range(1, n_root):
+                    if root_score[gi] > -MATE_BOUND and root_score[gi] > guard_best:
+                        guard_best = root_score[gi]; guard_idx = gi
+                if guard_idx >= 0:
+                    final_from = root_from[guard_idx]
+                    final_to = root_to[guard_idx]
+                    final_cap = root_cap[guard_idx]
+                    final_score = guard_best
             break
 
         if best_idx >= 0:

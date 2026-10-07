@@ -120,6 +120,9 @@ class SearchOptions:
     eval_version: int = 2           # 1 = original evaluator, 2 = Janggi-aware
     use_hist_lmr: bool = True       # scale the late-move reduction by move history
     use_hist_malus: bool = False    # bounded signed history: gravity + malus for failed quiets
+    use_root_guard: bool = False    # never play a root move the current depth has proven lost
+    use_mate_threat: bool = False   # null-move fail-low with a mate score: extend, do not prune
+    use_chk_prune: bool = False     # never futility/LMP-prune a move that gives check
 
     _ALIASES = {
         "tt": "use_tt", "lmr": "use_lmr", "ext": "use_ext", "nmp": "use_nmp",
@@ -130,6 +133,7 @@ class SearchOptions:
         "eval": "eval_version",
         "histlmr": "use_hist_lmr",
         "histmalus": "use_hist_malus",
+        "rootguard": "use_root_guard", "mthreat": "use_mate_threat", "chkprune": "use_chk_prune",
     }
 
     @classmethod
@@ -278,6 +282,9 @@ class Engine:
             opts.eval_version,
             1 if opts.use_hist_lmr else 0,
             1 if opts.use_hist_malus else 0,
+            1 if opts.use_root_guard else 0,
+            1 if opts.use_mate_threat else 0,
+            1 if opts.use_chk_prune else 0,
         )
         deadline = (time.time() + self.time_limit) if self.time_limit else 0.0
         frm, to, cap, score, depth, pv = core_search(
