@@ -80,6 +80,7 @@ Every row below is a colour-swapped match at an equal node budget per move,
 | change | alone vs 1.0.0 | verdict |
 | --- | ---: | --- |
 | `histmalus` — bounded signed history (gravity + malus) | 60 games: +33 =0 -27, 55.0%; extended once, as pre-declared, to **120 games: +67 =0 -53, 55.8%, +41 elo (pairs CI 47.5..64.2)** | not distinguishable at 120 — **off by default**, code and flag kept |
+| `rootguard=1` (window on, exact re-search of the PV move on a fail-low) vs deployed, 60k | +28 =0 -32 of 60, 46.7%, -23 elo (pairs CI 34.3..59.0); 2 of 30 pairs identical | not distinguishable; 300k pending |
 | **the bundle** `asp=0,rootguard=1,extbudget=4` vs deployed, 60k nodes | +31 =0 -29 of 60, 51.7%, +12 elo (pairs CI 37.4..65.9) | not worse at 60k — **passes** its rule; 300k pending |
 | **the bundle** vs deployed, **300k** nodes — the regime the defect lives in | +27 =0 -33 of 60, 45.0%, -35 elo (pairs CI 32.3..57.7) | not distinguishable, but below its best member at both budgets — the plan's leave-one-out rule fires: the pair without `extbudget=4` is measured at 300k |
 | the pair `asp=0,rootguard=1` vs deployed, **300k** (leave-one-out) | +26 =0 -34 of 60, 43.3%, -47 elo (pairs CI 32.1..54.6) | same as the bundle: `extbudget=4` was not the drag, **`asp=0` is** — 60% at 60k, 43% at 300k; the window is worth more the deeper the search. Neither ships. Contingency: keep the window and make rootguard reachable under it |
