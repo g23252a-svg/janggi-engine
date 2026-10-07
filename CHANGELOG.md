@@ -86,6 +86,16 @@ the open work.
   ordering still reads raw `histh`, so reductions changed and ordering did not —
   moving both at once would have made this uninterpretable.
 
+  **Correction (found while preparing 1.1.0):** only one of the two halves above
+  does anything. Counters on this exact build, depth-12 searches of three
+  positions, show the "+1 on zero history" branch firing on 33–42% of eligible
+  quiet moves and the "top quarter of the running max → −1" branch on
+  **0.2–0.3%**. The running max is a handful of moves with hundreds of cutoffs,
+  and three quarters of that is out of reach for everything else. The +108 elo
+  is real and comes from reducing never-cut quiets one ply more; the "rescue"
+  half was never operative. The measurement stands; the description above was
+  wrong about why.
+
 - **A version, in one place.** `janggi/_version.py` is the single source;
   `setup.py`, `python -m janggi.cli --version`, `GET /health` and the board UI
   all read it, and a test pins that they agree. Previously the only version in

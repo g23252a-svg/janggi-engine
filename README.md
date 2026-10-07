@@ -25,9 +25,11 @@ against live human opponents on online services.
   same opponent over the same openings), so it stays on. Its formula
   `R = 3 + depth/5` has never been tuned; that is the open work.
 - **Futility, reverse futility and late-move pruning**, plus late move
-  reductions from a depth × move-index table, scaled by how often the move has
-  caused a cutoff in this search — measured against the running maximum, not a
-  constant, so the test means the same thing at every depth and time limit.
+  reductions from a depth × move-index table, with one extra ply of reduction
+  for a quiet move that has never caused a cutoff in this search. (The release
+  that added this also described a "reduce less for the best-scoring quiets"
+  half; counters showed it firing on 0.2–0.3% of moves. The gain is from the
+  first half alone — see CHANGELOG 1.0.0.)
 - **Quiescence search** with SEE and delta pruning: keeps resolving captures
   until the position is quiet, so a shallow search cannot misread the middle of
   an exchange.
