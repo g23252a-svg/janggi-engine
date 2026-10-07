@@ -3,3 +3,5 @@
 {"seed": 20260813, "a_is_cho": true, "winner": "han", "plies": 76, "a": "lmrcap=1", "b": ""}
 {"seed": 20260813, "a_is_cho": false, "winner": "cho", "plies": 95, "a": "lmrcap=1", "b": ""}
 {"seed": 20260814, "a_is_cho": true, "winner": "cho", "plies": 197, "a": "lmrcap=1", "b": ""}
+{"seed": 20260814, "a_is_cho": false, "winner": "han", "plies": 92, "a": "lmrcap=1", "b": ""}
+{"seed": 20260815, "a_is_cho": true, "winner": "han", "plies": 124, "a": "lmrcap=1", "b": ""}
