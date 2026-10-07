@@ -23,6 +23,17 @@ def tiny(spec=""):
     return match.Config("A" if spec == "" else "B", 3, 300, None, spec)
 
 
+# The tests that play games need the compiled core: the pure-Python search
+# takes minutes per game even at this budget, and the pure-Python CI job would
+# time out. The interval, pooling and round-trip tests below are pure
+# arithmetic over logs and run everywhere.
+plays_games = pytest.mark.skipif(
+    os.environ.get("JANGGI_NO_ACCEL") == "1",
+    reason="plays games; the pure-Python search is too slow for CI at any budget",
+)
+
+
+@plays_games
 def test_every_finished_game_is_logged_as_it_finishes(tmp_path, capsys):
     log = tmp_path / "m.jsonl"
     match.run_match(tiny(), tiny("lmr=0"), games=2, seed=7, opening_plies=4,
@@ -35,6 +46,7 @@ def test_every_finished_game_is_logged_as_it_finishes(tmp_path, capsys):
     assert "endings (A wins-losses):" in capsys.readouterr().out
 
 
+@plays_games
 def test_resume_counts_logged_games_and_plays_only_the_rest(tmp_path, capsys):
     log = tmp_path / "m.jsonl"
     # Pretend a run of 4 games (2 pairs) died after the first pair.
@@ -55,6 +67,7 @@ def test_resume_counts_logged_games_and_plays_only_the_rest(tmp_path, capsys):
     assert {(r["seed"], r["a_is_cho"]) for r in lines} == {(7, True), (7, False), (8, True), (8, False)}
 
 
+@plays_games
 def test_resume_is_idempotent(tmp_path, capsys):
     """Resuming a finished match plays nothing and reports the same numbers."""
     log = tmp_path / "m.jsonl"
