@@ -18,6 +18,7 @@ Every row below is a colour-swapped match at an equal 60k nodes per move,
 | `extbudget=4` — one more check extension per path | +31 =0 -29 of 60, 51.7% (pairs CI 44.4..58.9); 9 of 23 pairs the same game | inert at 60k — judged at 300k, where the defect lives |
 | `mob=2` — coverage mobility in the compiled evaluator | +36 =0 -24 of 60, 60.0%, +70 elo (pairs CI 49.3..70.7) | not distinguishable, and it costs 11.5% nps that a node-limited match cannot see — **off**, flag kept |
 | `lmrcap` — reduce SEE-negative captures like late quiets | +10 =0 -13 of 23, 43.5% — stopped early | **off**: palace sacrifices are SEE-negative captures by definition |
+| `soltab=1` — soldier advancement by a per-row table instead of linear to the back rank | +34 =0 -26 of 60, 56.7%, +47 elo (pairs CI 43.8..69.5) | not distinguishable — **off**, flag kept |
 | `mthreat=1` — a null-move fail-low with a mate score extends and disables margin pruning | +30 =0 -30 of 60, 50.0% — but 17 of 30 pairs were the **same game** (inert at 60k) | **does not ship**: it hides the CHO-side mate proof (see below) |
 
 `histmalus` is the principled fix for the finding in the 1.0.0 correction below
