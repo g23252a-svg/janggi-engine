@@ -120,7 +120,7 @@ class SearchOptions:
     eval_version: int = 2           # 1 = original evaluator, 2 = Janggi-aware
     use_hist_lmr: bool = True       # scale the late-move reduction by move history
     use_hist_malus: bool = False    # bounded signed history: gravity + malus for failed quiets
-    root_guard_mode: int = 0        # 0 off; 1 guard + re-search on every PV fail-low; 2 re-search only past 70% of the budget
+    root_guard_mode: int = 0        # 0 off; 1 re-search on every PV fail-low; 2 only past 70% of budget; 3 reserve 8% and verify on timeout
     # mate_threat_mode never did what its name says. The threat is detected in
     # the null-move block, which runs only when static_eval >= beta; futility
     # prunes only when static_eval + margin <= alpha < beta. The two cannot be

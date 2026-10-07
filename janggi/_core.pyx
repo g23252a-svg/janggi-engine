@@ -1201,6 +1201,9 @@ cdef int g_use_hist_malus = 0
 cdef int g_use_root_guard = 0   # 0 off; 1 guard + exact re-search on every PV fail-low;
                                 # 2 guard + re-search only past 70% of the budget
 cdef double g_search_start = 0.0
+cdef long long g_node_reserve = 0      # mode 3: nodes held back for the verification
+cdef double g_time_reserve = 0.0       # mode 3: seconds held back
+cdef int root_bound[204]               # 1 if root_score[i] is a fail-low bound, 0 if exact
 cdef int g_use_mate_threat = 0  # mate-threat mode: 0 off; 1 extend + gate pruning; 2 gate pruning only.
                                 # Mode 1 hides the attacker's own proof (the extension on the defending
                                 # side grows the attacker's tree past the budget: +2072 instead of mate
@@ -1270,11 +1273,11 @@ cdef int _time_up():
     global g_timeout
     if g_timeout:
         return 1
-    if g_node_limit > 0 and (g_nodes + g_qnodes) >= g_node_limit:
+    if g_node_limit > 0 and (g_nodes + g_qnodes) >= g_node_limit - g_node_reserve:
         g_timeout = 1
         return 1
     if g_deadline > 0.0 and (g_nodes + g_qnodes) % 2048 == 0:
-        if _pytime.time() > g_deadline:
+        if _pytime.time() > g_deadline - g_time_reserve:
             g_timeout = 1
             return 1
     return 0
@@ -1813,6 +1816,7 @@ cdef int _root_iteration(int* piece, int* side, int who, int depth,
             return best
         root_score[i] = score
         root_iter[i] = depth
+        root_bound[i] = 1 if (alpha > -MATE * 2 and score <= alpha) else 0
         if score > best:
             best = score
             best_idx[0] = i
@@ -1881,6 +1885,7 @@ def core_reset(int max_depth, int ext_budget, int use_tt=1, int use_lmr=1,
     g_mob = mob
     for i in range(204):
         root_iter[i] = 0
+        root_bound[i] = 0
     g_hist_max = 0
     n_game_hash = 0
 
@@ -1902,6 +1907,14 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
     g_search_start = _pytime.time()
     g_base_ply = base_ply
     g_timeout = 0
+    global g_node_reserve, g_time_reserve
+    g_node_reserve = 0; g_time_reserve = 0.0
+    if g_use_root_guard == 3:
+        # Hold back 8% of the budget. In normal play that is the whole cost
+        # of mode 3; the reserve is spent only when the interrupted depth
+        # left the PV move's score as a fail-low bound.
+        g_node_reserve = g_node_limit // 12 if g_node_limit > 0 else 0
+        g_time_reserve = 0.08 * (deadline - g_search_start) if deadline > 0.0 else 0.0
     h_top = 0
     _full_hash(&piece[0], &side[0], who)
     path_hash[0] = cur_hash
@@ -1963,7 +1976,7 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
     _sort_root()
 
     cdef int depth, best_idx, score, alpha, beta, window
-    cdef int guard_idx, guard_best, gi
+    cdef int guard_idx, guard_best, gi, vscore
     cdef int final_from = root_from[0], final_to = root_to[0]
     cdef int final_cap = root_cap[0], final_score = 0, depth_done = 0
     cdef int ext_budget = g_ext
@@ -1995,6 +2008,25 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
                 continue
             break
 
+        if g_timeout and g_use_root_guard == 3 and depth_done > 0 and n_root > 1 \
+                and root_iter[0] == depth and root_bound[0] == 1 \
+                and root_score[0] > -MATE_BOUND:
+            # mode 3: the PV move failed low this depth and the clock ran out
+            # before the redo. Spend the reserve on one exact search of it so
+            # the guard below has a score instead of a bound.
+            g_node_reserve = 0; g_time_reserve = 0.0; g_timeout = 0
+            fr = root_from[0] // COLS; fc = root_from[0] % COLS
+            tr = root_to[0] // COLS;   tc = root_to[0] % COLS
+            _make(&piece[0], &side[0], fr, fc, tr, tc)
+            vscore = -_negamax(&piece[0], &side[0], 3 - who, depth - 1,
+                               -MATE * 2, MATE * 2, 1, 1, 1)
+            _unmake(&piece[0], &side[0])
+            # `score` is the interrupted iteration's best and feeds the
+            # acceptance test below; the verification must not clobber it
+            # (a timeout inside it returns 0, which then read as a score).
+            if not g_timeout:
+                root_score[0] = vscore; root_bound[0] = 0
+            g_timeout = 1
         if g_timeout:
             # Accept a partially searched deeper iteration only when it found
             # something strictly better than the last completed depth.
