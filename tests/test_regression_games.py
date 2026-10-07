@@ -51,9 +51,14 @@ LOST_GAME_PLY_54 = [
 ]
 
 FATAL = (0, 5, 1, 4)
-# The moves that actually hold: 차 (2,1)->(8,1) at about -3200 and 사 (0,5)->(1,5)
-# at about -3650. Everything else is mate -- including 차 (2,1)->(3,1), which a
-# weaker version of this test (asserting only "not FATAL") let through.
+# The moves that hold at this budget: 차 (2,1)->(8,1) at about -3200 and 사
+# (0,5)->(1,5) at about -3650. Giving CHO one million nodes against each of the
+# 27 legal replies refutes the other 25 by mate -- in 3 to 15 plies, 23 of them
+# in under 300k nodes -- including 차 (2,1)->(3,1), which a weaker version of
+# this test (asserting only "not FATAL") let through. At 1.5M nodes CHO finds a
+# mate in 13 after (0,5,1,5) as well, so the position may be lost outright and
+# (2,1,8,1) is the most resistant move; what the test asks for is a move the
+# opponent cannot refute within the budget the engine itself had.
 HOLDS = {(2, 1, 8, 1), (0, 5, 1, 5)}
 # The '표준' tier of the web UI searches for 3.5 s, which is about one million
 # nodes on the deployment. A test that passes at three million nodes while the
@@ -97,6 +102,28 @@ def test_the_mate_after_the_fatal_move_is_seen_quickly():
 # it keeps meaning the same thing after any default flips. Every A/B in the
 # 1.1.0 campaign used "" to mean this engine; if this number moves, "" has
 # silently stopped meaning that and every verdict in CHANGELOG is suspect.
+@needs_core
+def test_the_fail_low_extension_fires_once_and_at_most_doubles_the_budget():
+    """rootguard=4: when the clock runs out with the PV move's fail-low
+    unresolved, the search may carry on up to double its budget, once. At the
+    UI's budget that is what turns the fatal move into the move that holds;
+    the extension must fire exactly once, never spend more than double, and
+    cost nothing when the budget is a depth."""
+    opts = SearchOptions.parse("rootguard=4")
+    engine = Engine(max_depth=30, options=SearchOptions(**{**opts.__dict__, "node_limit": SHIPPING_BUDGET}))
+    move, score = engine.search(build(LOST_GAME_PLY_54), HAN, game_ply=53)
+    assert move.as_tuple() in HOLDS
+    assert engine.stats.guard_verified == 1, "the extension should fire exactly once here"
+    assert SHIPPING_BUDGET < engine.stats.total_nodes <= 2 * SHIPPING_BUDGET
+    assert score > -MATE_BOUND
+    # A depth-limited search never times out, so it never extends: the search
+    # is node-identical to the deployed engine.
+    engine = Engine(max_depth=12, options=opts)
+    engine.search(Board.standard(), CHO)
+    assert engine.stats.guard_verified == 0
+    assert engine.stats.total_nodes == DEPLOYED_1_0_0_DEPTH12_NODES
+
+
 DEPLOYED_1_0_0 = ("asp=1,rootguard=0,extbudget=3,histmalus=0,mthreat=0,"
                   "chkprune=0,lmrcap=0,soltab=0,mob=0")
 DEPLOYED_1_0_0_DEPTH12_NODES = 2_822_961
@@ -128,7 +155,7 @@ def test_the_deployed_search_is_node_identical():
 # them hide this proof at some budgets and defaults, which is one more reason
 # they stay off. Re-enabling any of them means adding it here first.
 SHIPPABLE = ["", DEPLOYED_1_0_0, "histmalus=1", "mthreat=2", "extbudget=4",
-             "asp=0", "asp=1", "rootguard=0", "rootguard=1",
+             "asp=0", "asp=1", "rootguard=0", "rootguard=1", "rootguard=4",
              "rootguard=1,extbudget=4", "asp=0,rootguard=1"]
 PROOF_SWEEP_BUDGET = 400_000
 

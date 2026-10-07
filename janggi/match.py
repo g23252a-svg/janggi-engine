@@ -63,7 +63,8 @@ def _history_hashes(hashes: list[int], last_capture_at: int) -> list[int]:
 
 
 def play_game(
-    cho: Config, han: Config, opening_plies: list[Move], start: tuple[str, str]
+    cho: Config, han: Config, opening_plies: list[Move], start: tuple[str, str],
+    usage: dict | None = None,
 ) -> tuple[str, int, str]:
     """Play one game; return (winner, plies_played, reason).
 
@@ -72,8 +73,14 @@ def play_game(
     would be a third repetition), "no_move" (the engine returned nothing) or
     "cap" (the 200-ply limit, decided on points). A candidate whose wins are
     all "cap" is winning on points at the bell, not by mating, and the
-    endings histogram in every summary is there to make that visible."""
+    endings histogram in every summary is there to make that visible.
+
+    ``usage``, if given, is filled with what each side actually spent:
+    ``{"cho": {"nodes", "moves", "guard"}, "han": {...}}``. A search
+    that may overrun its nominal budget (rootguard mode 4) is only honest
+    in a node-limited match if the summary shows the nodes it really used."""
     board = Board.standard(*start)
+    spent = {CHO: [0, 0, 0], HAN: [0, 0, 0]}   # nodes, moves, guard firings
     tracker = RepetitionTracker()
     tracker.record(board)
     hashes = [board.zobrist()]
@@ -107,6 +114,12 @@ def play_game(
             history_hashes=_history_hashes(hashes, last_capture_at),
             game_ply=ply,
         )
+        st = engines[side].stats
+        spent[side][0] += st.total_nodes; spent[side][1] += 1
+        spent[side][2] += getattr(st, "guard_fired", 0)
+        if usage is not None:
+            usage.update({("cho" if s == CHO else "han"): {"nodes": v[0], "moves": v[1], "guard": v[2]}
+                          for s, v in spent.items()})
         if move is None:
             return ("han" if -side == HAN else "cho"), ply, "no_move"
         board.make(move)
@@ -187,6 +200,7 @@ def run_match(a: Config, b: Config, games: int, seed: int, opening_plies: int,
     skipped = 0
     pair_scores: list[float] = []
     endings: dict[str, list[int]] = {}
+    used: dict[str, int] = {}
     log_fh = open(log_path, "a", encoding="utf-8") if log_path else None
     try:
         for pair in range(pairs):
@@ -200,14 +214,19 @@ def run_match(a: Config, b: Config, games: int, seed: int, opening_plies: int,
                     winner, plies = rec["winner"], rec["plies"]
                     reason = rec.get("reason", "?")
                     skipped += 1
+                    _tally(used, rec.get("spent", {}).get("a", {}), rec.get("spent", {}).get("b", {}))
                 else:
                     cho_cfg, han_cfg = (a, b) if a_is_cho else (b, a)
-                    winner, plies, reason = play_game(cho_cfg, han_cfg, opening, start)
+                    usage: dict = {}
+                    winner, plies, reason = play_game(cho_cfg, han_cfg, opening, start, usage)
+                    spent_a = usage.get(a_side, {}); spent_b = usage.get("han" if a_is_cho else "cho", {})
+                    _tally(used, spent_a, spent_b)
                     if log_fh is not None:
                         log_fh.write(json.dumps({
                             "seed": game_seed, "a_is_cho": a_is_cho,
                             "winner": winner, "plies": plies, "reason": reason,
                             "a": a.spec, "b": b.spec, "budget": budget,
+                            "spent": {"a": spent_a, "b": spent_b},
                         }) + "\n")
                         log_fh.flush()
                 if winner == "draw":
@@ -232,7 +251,15 @@ def run_match(a: Config, b: Config, games: int, seed: int, opening_plies: int,
             log_fh.close()
     if skipped:
         print(f"  ({skipped} game(s) taken from {log_path}; {pairs * 2 - skipped} played now)")
-    return summarize(a.name, b.name, wins, draws, losses, pair_scores, endings)
+    return summarize(a.name, b.name, wins, draws, losses, pair_scores, endings, used)
+
+
+def _tally(used: dict[str, int], spent_a: dict, spent_b: dict) -> None:
+    """Accumulate what A and B really spent, from a game or a log line."""
+    for who, spent in (("a", spent_a), ("b", spent_b)):
+        for key in ("nodes", "moves", "guard"):
+            if key in spent:
+                used[f"{key}_{who}"] = used.get(f"{key}_{who}", 0) + int(spent[key])
 
 
 def pool_logs(paths: list[str]) -> dict:
@@ -243,6 +270,7 @@ def pool_logs(paths: list[str]) -> dict:
     specs: set[tuple[str, str]] = set()
     by_pair: dict[int, dict[bool, float]] = {}
     endings: dict[str, list[int]] = {}
+    used: dict[str, int] = {}
     for path in paths:
         for key, rec in _load_log(path).items():
             specs.add((rec.get("a", ""), rec.get("b", "")))
@@ -250,6 +278,7 @@ def pool_logs(paths: list[str]) -> dict:
                 continue                     # the same game logged twice
             seen.add(key)
             a_side = "cho" if rec["a_is_cho"] else "han"
+            _tally(used, rec.get("spent", {}).get("a", {}), rec.get("spent", {}).get("b", {}))
             if rec["winner"] == "draw":
                 draws += 1; pts = 0.5
             elif rec["winner"] == a_side:
@@ -264,12 +293,13 @@ def pool_logs(paths: list[str]) -> dict:
     half = sum(1 for p in by_pair.values() if len(p) != 2)
     if half:
         print(f"  ({half} half-played pair(s) count in the score but not in the pair interval)")
-    return summarize("A", "B", wins, draws, losses, pair_scores or None, endings)
+    return summarize("A", "B", wins, draws, losses, pair_scores or None, endings, used)
 
 
 def summarize(a_name: str, b_name: str, wins: int, draws: int, losses: int,
               pair_scores: list[float] | None = None,
-              endings: dict[str, list[int]] | None = None) -> dict:
+              endings: dict[str, list[int]] | None = None,
+              used: dict[str, int] | None = None) -> dict:
     """Score, interval, elo and verdict.
 
     The two games of a colour-swapped pair share one opening, so they are not
@@ -279,7 +309,11 @@ def summarize(a_name: str, b_name: str, wins: int, draws: int, losses: int,
     ``pair_scores`` is given (A's points per pair, 0 / 0.5 / 1 / 1.5 / 2) the
     interval is computed over pairs. Without it the per-game formula is used,
     which is what the earlier releases reported; both are printed when the
-    pair data exists so the two can be compared."""
+    pair data exists so the two can be compared.
+
+    ``used`` is what each side really spent (``nodes_a``, ``moves_a``,
+    ``guard_a`` and the same for B); a search allowed to overrun its nominal
+    budget shows up here as a nodes-per-move ratio above 1."""
     played = wins + draws + losses
     score = (wins + 0.5 * draws) / played if played else 0.0
     # Standard error of the per-game score, then a 95% interval. Draws carry no
@@ -331,11 +365,17 @@ def summarize(a_name: str, b_name: str, wins: int, draws: int, losses: int,
         # cannot hide inside a plain score.
         parts = [f"{k} {v[1]}-{v[2]}" + (f" ={v[0]}" if v[0] else "") for k, v in sorted(endings.items())]
         print("  endings (A wins-losses): " + ", ".join(parts))
+    if used and used.get("moves_a") and used.get("moves_b"):
+        npm_a = used["nodes_a"] / used["moves_a"]; npm_b = used["nodes_b"] / used["moves_b"]
+        print(f"  nodes per move: A {npm_a:,.0f}  B {npm_b:,.0f}  (A/B {npm_a / npm_b:.3f}); "
+              f"rootguard changed the move A {used.get('guard_a', 0)} / B {used.get('guard_b', 0)} times "
+              f"in {used['moves_a']} / {used['moves_b']} moves")
     return {
         "wins": wins, "draws": draws, "losses": losses, "games": played,
         "score": score, "ci": (lo, hi), "elo": elo, "verdict": verdict,
         "pairs": len(pair_scores) if pair_scores else 0,
         "endings": endings or {},
+        "used": used or {},
     }
 
 

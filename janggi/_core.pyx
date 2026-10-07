@@ -1199,10 +1199,16 @@ cdef int g_use_hist_malus = 0
 # real lost game (tests/test_regression_games.py): at the UI's budget the
 # engine walked into a 15-ply mate while two moves held.
 cdef int g_use_root_guard = 0   # 0 off; 1 guard + exact re-search on every PV fail-low;
-                                # 2 guard + re-search only past 70% of the budget
+                                # 2 guard + re-search only past 70% of the budget;
+                                # 3 reserve 8% of the budget, verify the PV move on timeout;
+                                # 4 fail-low extension: when the clock runs out with the
+                                #   PV move's fail-low unresolved, allow up to double the
+                                #   budget once and carry on
 cdef double g_search_start = 0.0
 cdef long long g_node_reserve = 0      # mode 3: nodes held back for the verification
 cdef double g_time_reserve = 0.0       # mode 3: seconds held back
+cdef long long g_guard_verify = 0      # mode 3: verifications; mode 4: extensions granted
+cdef long long g_guard_fired = 0       # any mode: moves changed by the proven-loss rule
 cdef int root_bound[204]               # 1 if root_score[i] is a fail-low bound, 0 if exact
 cdef int g_use_mate_threat = 0  # mate-threat mode: 0 off; 1 extend + gate pruning; 2 gate pruning only.
                                 # Mode 1 hides the attacker's own proof (the extension on the defending
@@ -1888,6 +1894,8 @@ def core_reset(int max_depth, int ext_budget, int use_tt=1, int use_lmr=1,
         root_bound[i] = 0
     g_hist_max = 0
     n_game_hash = 0
+    global g_guard_verify, g_guard_fired
+    g_guard_verify = 0; g_guard_fired = 0
 
 
 def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
@@ -1907,7 +1915,7 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
     g_search_start = _pytime.time()
     g_base_ply = base_ply
     g_timeout = 0
-    global g_node_reserve, g_time_reserve
+    global g_node_reserve, g_time_reserve, g_guard_verify, g_guard_fired, g_node_limit
     g_node_reserve = 0; g_time_reserve = 0.0
     if g_use_root_guard == 3:
         # Hold back 8% of the budget. In normal play that is the whole cost
@@ -1976,7 +1984,7 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
     _sort_root()
 
     cdef int depth, best_idx, score, alpha, beta, window
-    cdef int guard_idx, guard_best, gi, vscore
+    cdef int guard_idx, guard_best, gi, vscore, extended = 0
     cdef int final_from = root_from[0], final_to = root_to[0]
     cdef int final_cap = root_cap[0], final_score = 0, depth_done = 0
     cdef int ext_budget = g_ext
@@ -1999,6 +2007,34 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
             score = _root_iteration(&piece[0], &side[0], who, depth,
                                     alpha, beta, &best_idx)
             if g_timeout:
+                if (g_use_root_guard == 4 and not extended and depth_done > 0
+                        and n_root > 1 and root_iter[0] == depth
+                        and root_bound[0] == 1 and root_score[0] > -MATE_BOUND):
+                    # Fail-low extension. The move the engine was about to
+                    # play has just failed low at this depth and the clock
+                    # ran out before the wider window could say what that
+                    # means -- a bound, which the acceptance rule below
+                    # cannot act on. This is the one moment a search is
+                    # worth more time: the previous best is suspect and
+                    # nothing has replaced it. Allow up to double the budget,
+                    # once, and carry on as if the clock had not run out: the
+                    # pass is rerun at the same window, which the table makes
+                    # cheap, and the normal widening follows. (Rerunning with
+                    # the window off instead was tried: every other move then
+                    # fails high against a mate-score alpha and gets a full
+                    # re-search, and the depth never completes.) Modes 1-3
+                    # tried to answer the same question inside the budget by
+                    # paying on every move for a re-search or a reserve; this
+                    # pays only here. In the lost game, deployed finds the
+                    # holding move at 1.5x the UI's budget.
+                    extended = 1
+                    g_guard_verify += 1
+                    if g_node_limit > 0:
+                        g_node_limit += g_node_limit
+                    if g_deadline > 0.0:
+                        g_deadline += g_deadline - g_search_start
+                    g_timeout = 0
+                    continue
                 break
             if window > 0 and (score <= alpha or score >= beta):
                 # Aspiration failed: widen and redo this depth.
@@ -2063,6 +2099,7 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
                     # exact score. The move is what matters here; the number
                     # is the best the engine has and can overstate the move.
                     final_score = guard_best
+                    g_guard_fired += 1
             break
 
         if best_idx >= 0:
@@ -2133,6 +2170,18 @@ def core_negamax(int[::1] piece, int[::1] side, int who, int depth,
 
 def core_stats():
     return (g_nodes, g_qnodes, g_tthits)
+
+def core_guard_stats():
+    """(fail-low extensions or verifications run, moves the proven-loss
+    rule changed) in the last search."""
+    return (g_guard_verify, g_guard_fired)
+
+def core_root_dump():
+    """Root moves as the last search left them: (from, to, score, depth the
+    score is from, 1 if it is a fail-low bound). Index order is the order the
+    last completed depth sorted them in. For tests and diagnosis."""
+    return [(root_from[i], root_to[i], root_score[i], root_iter[i], root_bound[i])
+            for i in range(n_root)]
 
 def core_diag():
     return (g_seecalls, g_gencalls)

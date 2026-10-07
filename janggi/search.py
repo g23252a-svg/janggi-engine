@@ -33,7 +33,7 @@ try:
     from .board import DISABLE_ACCEL as _NO_ACCEL
     if _NO_ACCEL:
         raise ImportError("accelerators disabled by JANGGI_NO_ACCEL")
-    from janggi._core import core_reset, core_negamax, core_search, core_stats
+    from janggi._core import core_reset, core_negamax, core_search, core_stats, core_guard_stats
     _HAVE_CORE = True
 except Exception:
     _HAVE_CORE = False
@@ -79,6 +79,9 @@ class SearchStats:
     #: Principal variation as (fr, fc, tr, tc) tuples, best line first.
     pv: list[tuple[int, int, int, int]] = field(default_factory=list)
     elapsed: float = 0.0
+    #: rootguard: verification searches run, and moves the guard changed.
+    guard_verified: int = 0
+    guard_fired: int = 0
 
     @property
     def total_nodes(self) -> int:
@@ -120,7 +123,15 @@ class SearchOptions:
     eval_version: int = 2           # 1 = original evaluator, 2 = Janggi-aware
     use_hist_lmr: bool = True       # scale the late-move reduction by move history
     use_hist_malus: bool = False    # bounded signed history: gravity + malus for failed quiets
-    root_guard_mode: int = 0        # 0 off; 1 re-search on every PV fail-low; 2 only past 70% of budget; 3 reserve 8% and verify on timeout
+    # rootguard: never play a root move the current depth has proven lost.
+    # 0 off; 1 exact re-search of the PV move on every fail-low; 2 the same
+    # only past 70% of the budget; 3 hold back 8% of the budget and verify
+    # the PV move on timeout; 4 the fail-low extension: when the clock runs
+    # out with the PV move's fail-low unresolved, allow up to double the
+    # budget once and carry on. Modes 1-3 measured
+    # 40-47% against 1.0.0 (CHANGELOG): each pays on every move for a guard
+    # that fires on few. Mode 4 pays only on the moves it fires on, in time.
+    root_guard_mode: int = 0
     # mate_threat_mode never did what its name says. The threat is detected in
     # the null-move block, which runs only when static_eval >= beta; futility
     # prunes only when static_eval + margin <= alpha < beta. The two cannot be
@@ -313,6 +324,7 @@ class Engine:
         self.stats.nodes = cn
         self.stats.qnodes = cq
         self.stats.tt_hits = ct
+        self.stats.guard_verified, self.stats.guard_fired = core_guard_stats()
         self.stats.depth_reached = depth
         self.stats.pv = [
             (f // COLS, f % COLS, t // COLS, t % COLS) for f, t in pv
