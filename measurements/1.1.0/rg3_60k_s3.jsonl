@@ -1,0 +1,3 @@
+{"seed": 20260832, "a_is_cho": true, "winner": "cho", "plies": 93, "reason": "mate", "a": "rootguard=3", "b": "", "budget": {"nodes": 60000, "time": null, "depth": 64}}
+{"seed": 20260832, "a_is_cho": false, "winner": "cho", "plies": 200, "reason": "cap", "a": "rootguard=3", "b": "", "budget": {"nodes": 60000, "time": null, "depth": 64}}
+{"seed": 20260833, "a_is_cho": true, "winner": "han", "plies": 200, "reason": "cap", "a": "rootguard=3", "b": "", "budget": {"nodes": 60000, "time": null, "depth": 64}}
