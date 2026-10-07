@@ -1027,7 +1027,10 @@ cdef int _evaluate2(int* piece, int* side):
 
             if pc == 5:      # soldier
                 adv = r if s == 1 else (ROWS - 1 - r)
-                v += adv * 8
+                if g_soltab == 1:
+                    v += SOLTAB1[adv]
+                else:
+                    v += adv * 8
                 if 3 <= c <= 5:
                     v += 10
                 # connected soldiers defend each other
@@ -1187,6 +1190,16 @@ cdef int g_use_hist_malus = 0
 cdef int g_use_root_guard = 0   # never play a root move this depth has proven lost
 cdef int g_use_mate_threat = 0  # a null-move fail-low with a mate score is a threat: extend, do not prune
 cdef int g_use_chk_prune = 0    # never futility/LMP-prune a move that gives check
+cdef int g_use_lmr_cap = 0      # reduce losing (SEE-negative) captures too, one ply less than quiets
+cdef int g_soltab = 0           # 0: soldier advancement linear adv*8; 1: per-row table
+# Soldier value by distance advanced (index = adv, 0..9). Linear adv*8 made the
+# most valuable soldier on the board one standing on the enemy back rank, where
+# it can only shuffle sideways and attacks nothing -- and soldiers cannot
+# retreat, so every game paid that bias irreversibly. The table peaks on the
+# row in front of the enemy palace and falls off past it. The +30 for standing
+# inside the enemy palace is unchanged.
+cdef int SOLTAB1[10]
+SOLTAB1[:] = [0, 0, 0, 0, 8, 18, 32, 40, 24, 4]
 cdef int root_iter[204]         # the depth at which root_score[i] was last written
 DEF HMAX = 16384
 
@@ -1599,14 +1612,23 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
         new_depth = depth - 1 + extend
 
         reduce = 0
-        if (g_use_lmr and extend == 0 and cap == 0 and not gives_check
-                and depth >= 3 and played >= 2):
+        if (g_use_lmr and extend == 0 and not gives_check
+                and depth >= 3 and played >= 2
+                and (cap == 0 or (g_use_lmr_cap and (mkey[i] >> 40) == 1))):
             di = depth if depth < 63 else 63
             mi = played if played < 63 else 63
             reduce = LMRTAB[di][mi]
             if is_pv and reduce > 0:
                 reduce -= 1
-            if g_use_hist_lmr and reduce > 0:
+            if cap != 0:
+                # lmrcap: a losing capture the ordering already put below every
+                # quiet move used to be the one kind of late move searched at
+                # full depth -- 6-10% of played moves. Reduce it, but one ply
+                # less than a quiet, since a sacrifice is how palace attacks
+                # start. History below is quiet-move history; skip it here.
+                if reduce > 0:
+                    reduce -= 1
+            elif g_use_hist_lmr and reduce > 0:
                 # A quiet move that has caused cutoffs all over this search is
                 # not a late move in any meaningful sense -- the ordering just
                 # has not caught up. Search it closer to full depth, and push
@@ -1774,13 +1796,14 @@ def core_reset(int max_depth, int ext_budget, int use_tt=1, int use_lmr=1,
                int use_lmp=1, int use_asp=1, int use_rep=1,
                long long node_limit=0, int eval_version=2,
                int use_hist_lmr=1, int use_hist_malus=0,
-               int use_root_guard=0, int use_mate_threat=0, int use_chk_prune=0):
+               int use_root_guard=0, int use_mate_threat=0, int use_chk_prune=0,
+               int use_lmr_cap=0, int soltab=0):
     """Reset TT / killers / history / stats for a fresh Engine.search()."""
     global g_nodes, g_qnodes, g_tthits, g_timeout, g_ext, g_maxdepth
     global g_use_tt, g_use_lmr, g_use_ext, g_use_nmp, g_use_pvs
     global g_use_fut, g_use_lmp, g_use_asp, g_use_rep, g_node_limit, n_game_hash
     global g_eval_ver, g_use_hist_lmr, g_hist_max, g_use_hist_malus
-    global g_use_root_guard, g_use_mate_threat, g_use_chk_prune
+    global g_use_root_guard, g_use_mate_threat, g_use_chk_prune, g_use_lmr_cap, g_soltab
     cdef int i
     for i in range(TT_SIZE):
         tt_flag[i] = -1
@@ -1806,6 +1829,8 @@ def core_reset(int max_depth, int ext_budget, int use_tt=1, int use_lmr=1,
     g_use_root_guard = use_root_guard
     g_use_mate_threat = use_mate_threat
     g_use_chk_prune = use_chk_prune
+    g_use_lmr_cap = use_lmr_cap
+    g_soltab = soltab
     for i in range(204):
         root_iter[i] = 0
     g_hist_max = 0
