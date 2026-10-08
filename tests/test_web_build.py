@@ -52,6 +52,21 @@ def test_build_produces_a_runnable_page(site):
     assert (site / ".nojekyll").exists(), "Jekyll would drop the janggi/ folder"
 
 
+# Run inside the subprocess after the imports: every janggi module and
+# engine_api must have been loaded from the directory given as argv[1]. -I
+# keeps PYTHONPATH and the current directory out, and -S keeps site-packages
+# out -- which matters, because the README's `pip install -e` leaves an
+# editable finder in site-packages that -I alone does not disable, and it
+# serves a module the build forgot straight from the checkout.
+ONLY_FROM_APP = (
+    "import sys, os; root = os.path.realpath(sys.argv[1]); "
+    "bad = sorted(n for n, m in sys.modules.items() "
+    "  if (n == 'janggi' or n.startswith('janggi.') or n == 'engine_api') "
+    "  and not os.path.realpath(getattr(m, '__file__', '') or '').startswith(root)); "
+    "assert not bad, 'loaded from outside the site: %r' % bad"
+)
+
+
 def test_the_shipped_package_imports_on_its_own(site):
     """Import the built site's engine in a fresh process whose only `janggi` is
     the shipped one.
@@ -65,10 +80,12 @@ def test_the_shipped_package_imports_on_its_own(site):
     the only way this file can tell the two copies apart.
     """
     out = subprocess.run(
-        [sys.executable, "-c",
+        [sys.executable, "-I", "-S", "-c",
+         "import sys; sys.path.insert(0, sys.argv[1]); "
          "import engine_api; "
          "b = engine_api.api_new({'cho': 'msm_s', 'han': 'msm_s'}); "
-         "assert b['board'], 'no start position'"],
+         "assert b['board'], 'no start position'; " + ONLY_FROM_APP,
+         str(site)],
         cwd=site, capture_output=True, text=True, timeout=300,
         env={**os.environ, "JANGGI_NO_ACCEL": "1", "PYTHONPATH": ""},
     )
@@ -118,12 +135,13 @@ def test_the_page_loads_every_module_the_package_imports(site):
         for name in names:
             shutil.copy2(site / "janggi" / f"{name}.py", app / "janggi" / f"{name}.py")
         shutil.copy2(site / "engine_api.py", app / "engine_api.py")
-        # -I keeps the repository out of sys.path; the page does the same
-        # insert of its own /app directory before importing.
+        # The page does the same insert of its own /app directory before
+        # importing; -I -S and ONLY_FROM_APP keep everything else out.
         out = subprocess.run(
-            [sys.executable, "-I", "-c",
+            [sys.executable, "-I", "-S", "-c",
              "import sys; sys.path.insert(0, sys.argv[1]); "
-             "import engine_api; import janggi; print(janggi.__version__)", str(app)],
+             "import engine_api; import janggi; print(janggi.__version__); " + ONLY_FROM_APP,
+             str(app)],
             cwd=app, capture_output=True, text=True,
             env={**os.environ, "PYTHONPATH": "", "JANGGI_NO_ACCEL": "1"},
         )
