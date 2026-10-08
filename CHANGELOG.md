@@ -3,6 +3,29 @@
 Versions before 0.4.0 predate this file; `setup.py` sat at 0.3.0 through all
 three of the patches below, which is what 1.0.0's versioning work is about.
 
+## 1.1.1 — the published page could not import its own engine
+
+The GitHub Pages build has been dead since 1.0.0 and nothing said so. 1.0.0
+added `janggi/_version.py` and imported it from `janggi/__init__.py`; #21
+added it to the list of modules the build ships; but the page's loader
+(`web/browser-engine.js`) fetched the modules by its own hard-coded list,
+which still ended at `nn_encode`. So the published site wrote an
+`__init__.py` that imports `._version` into a directory with no
+`_version.py`, and `import janggi` failed on every visit — "엔진 로드 실패:
+No module named 'janggi._version'" — while every build test passed, because
+the one that compared the two lists checked only that everything the page
+loads is shipped, not that everything shipped is loaded.
+
+The loader no longer has a list. `web/build_site.py` writes its
+`PACKAGE_MODULES` into the page at build time, the way it already writes the
+version, so shipping a module and loading it are one decision. Three tests
+replace the one: the built list must equal the build's, the source must carry
+the marker and no list of its own, and the shipped package is imported in a
+subprocess from a directory holding only the modules the page would fetch,
+the way the browser does. Removing `_version.py` from the build turns all
+three red. The server deployment was never affected: it runs the package
+from the repository, not from the built page.
+
 ## 1.1.0 — the lost game, fixed by proof
 
 A user played a game through the web UI following the engine's own
