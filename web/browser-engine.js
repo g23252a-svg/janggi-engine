@@ -18,10 +18,12 @@
   "use strict";
 
   const PYODIDE = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js";
-  const MODULES = [
-    "__init__", "board", "evaluate", "see", "search", "score",
-    "repetition", "gibo", "book", "mcts", "nn_encode",
-  ];
+  // Filled in by web/build_site.py from its PACKAGE_MODULES, so the list the
+  // page fetches and the list the build ships cannot drift apart. They did
+  // once: 1.0.0 added janggi/_version.py to the package and to the build, and
+  // this list still said 1.0.0-minus-one, so the published page died on
+  // `import janggi` while every build test passed.
+  const MODULES = /*@MODULES@*/[];
   const STORE_KEY = "janggi.serverUrl";
   const originalFetch = window.fetch.bind(window);
 

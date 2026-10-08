@@ -9,6 +9,7 @@ from silently shipping a page with no engine in it.
 import importlib.util
 import json
 import os
+import pathlib
 import re
 import subprocess
 import sys
@@ -74,14 +75,60 @@ def test_the_shipped_package_imports_on_its_own(site):
     assert out.returncode == 0, out.stderr
 
 
-def test_build_ships_every_module_the_page_loads(site):
-    """browser-engine.js fetches a fixed module list; the build must ship it."""
+def _modules_the_page_loads(site):
     js = (site / "browser-engine.js").read_text(encoding="utf-8")
     listed = js.split("const MODULES = [", 1)[1].split("]", 1)[0]
     names = [chunk.strip().strip('",') for chunk in listed.split(",") if chunk.strip()]
     assert names, "could not parse the module list out of browser-engine.js"
+    return names
+
+
+def test_the_page_loads_exactly_the_modules_the_build_ships(site):
+    """The loader's list is written by the build from PACKAGE_MODULES. The old
+    test here checked only one direction -- everything the page loads is
+    shipped -- and passed while the page loaded one module fewer than the
+    package needs: 1.0.0 added janggi/_version.py, the build shipped it, the
+    page never fetched it, and `import janggi` failed on the published site
+    for two releases. Both directions, by construction, and the one module
+    that bit is named so the next reader knows why."""
+    names = _modules_the_page_loads(site)
+    assert names == [m[:-3] for m in build_site.PACKAGE_MODULES]
+    assert "_version" in names
     for name in names:
         assert (site / "janggi" / f"{name}.py").exists(), f"page loads {name}.py, build omits it"
+
+
+def test_the_source_loader_has_no_list_of_its_own():
+    """A hard-coded list in web/browser-engine.js is how the drift happened;
+    the source must carry the build's marker and nothing else."""
+    src = (build_site.WEB / "browser-engine.js").read_text(encoding="utf-8")
+    assert src.count(build_site.MODULES_MARKER) == 1
+    assert "const MODULES = [" not in src
+
+
+def test_the_page_loads_every_module_the_package_imports(site):
+    """Independently of the build's list: run the shipped package with only
+    the modules the page would fetch present, the way the browser does."""
+    import shutil
+    import tempfile
+    names = _modules_the_page_loads(site)
+    with tempfile.TemporaryDirectory() as tmp:
+        app = pathlib.Path(tmp)
+        (app / "janggi").mkdir()
+        for name in names:
+            shutil.copy2(site / "janggi" / f"{name}.py", app / "janggi" / f"{name}.py")
+        shutil.copy2(site / "engine_api.py", app / "engine_api.py")
+        # -I keeps the repository out of sys.path; the page does the same
+        # insert of its own /app directory before importing.
+        out = subprocess.run(
+            [sys.executable, "-I", "-c",
+             "import sys; sys.path.insert(0, sys.argv[1]); "
+             "import engine_api; import janggi; print(janggi.__version__)", str(app)],
+            cwd=app, capture_output=True, text=True,
+            env={**os.environ, "PYTHONPATH": "", "JANGGI_NO_ACCEL": "1"},
+        )
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == build_site.read_version()
 
 
 def test_build_ships_every_asset_the_page_references(site):

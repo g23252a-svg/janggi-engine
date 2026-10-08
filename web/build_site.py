@@ -30,6 +30,7 @@ PACKAGE_MODULES = [
 ]
 
 INJECT = '<script src="browser-engine.js"></script>\n</head>'
+MODULES_MARKER = "/*@MODULES@*/[]"
 
 
 def read_version() -> str:
@@ -61,7 +62,18 @@ def build(out_dir: pathlib.Path) -> None:
         )
     (out_dir / "index.html").write_text(html, encoding="utf-8")
 
-    shutil.copy2(WEB / "browser-engine.js", out_dir / "browser-engine.js")
+    # The page's loader fetches the modules by name; it takes that list from
+    # here, not from a copy of its own, so shipping a module and loading it
+    # are the same decision.
+    js = (WEB / "browser-engine.js").read_text(encoding="utf-8")
+    if js.count(MODULES_MARKER) != 1:
+        raise SystemExit(
+            "web/browser-engine.js must carry exactly one "
+            f"{MODULES_MARKER} for the module list"
+        )
+    names = [name[:-3] for name in PACKAGE_MODULES]
+    js = js.replace(MODULES_MARKER, "[" + ", ".join(f'"{n}"' for n in names) + "]")
+    (out_dir / "browser-engine.js").write_text(js, encoding="utf-8")
     shutil.copy2(WEB / "engine_api.py", out_dir / "engine_api.py")
     # Installable-to-home-screen assets. index.html references these by relative
     # path so the same markup works under Flask at / and under Pages at
