@@ -159,7 +159,7 @@ class SearchOptions:
     #   5 a 16-ply cap alone
     #   6 repetition within the current quiescence call only, scored with the
     #     static eval, plus the cap: acts only where quiescence cycles
-    qsearch_guard: int = 0
+    qsearch_guard: int = 6
     soldier_table: int = 0          # 0 = linear advancement bonus, 1 = per-row table
     mobility_weight: int = 0        # centipawns per covered square; 0 = off
 

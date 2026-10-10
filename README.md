@@ -40,7 +40,9 @@ against live human opponents on online services.
   first half alone — see CHANGELOG 1.0.0.)
 - **Quiescence search** with SEE and delta pruning: keeps resolving captures
   until the position is quiet, so a shallow search cannot misread the middle of
-  an exchange.
+  an exchange. While in check it searches every evasion, so it stops at a
+  position repeated within the same call and at 32 plies: a cycle of evasions that give check back
+  once ran a single quiescence call past 3.4 million nodes (1.1.2).
 - **Move ordering** — transposition move, then captures by static exchange
   evaluation, then killers, counter-moves and history.
 - **Check extensions** on a per-branch budget.
@@ -181,6 +183,7 @@ What that measurement currently says, at an equal 60k nodes per move:
 | futility + late-move pruning | 65.0% of 40 | clearly better |
 | late move reductions | 60.0% of 40 | better, not significant at this sample |
 | null-move pruning | 48.3% of 60, 57.5% of 40, 45.0% of 60 | never significant in 160 games — kept on only because removing it costs what `histlmr` wins |
+| quiescence guard (`qguard=6`, 1.1.2, ships) | 50.0% of 60 at 60k (every game identical) and 48.3% of 60 at 300k (27 of 30 pairs identical) | fixes a real lost game; see CHANGELOG |
 | `rootguard` (1.1.0, ships) | 51.7% of 60 at 60k and **60.0% of 60 at 300k**, using 10% and 9% more nodes per move (it thinks longer only when its move has just failed) | fixes a real lost game by proof; see CHANGELOG |
 | bounded signed history (`histmalus=1`) | 55.8% of 120 | not distinguishable at 120 — off |
 | mobility in the compiled evaluator (`mob=2`) | 60.0% of 60 | not distinguishable, and costs 11.5% nps a node match cannot see — off |

@@ -3,6 +3,61 @@
 Versions before 0.4.0 predate this file; `setup.py` sat at 0.3.0 through all
 three of the patches below, which is what 1.0.0's versioning work is about.
 
+## 1.1.2 — a cycle of checks inside quiescence
+
+A user played CHO on 2026-10-10, followed the server engine for 20 of 24
+moves, and was mated in four by a 9th-grade opponent. As HAN in the
+position before the mate, the engine never saw it -- not at 1M nodes, not
+at 10M. It never completed depth 12 there at any budget. Depth 11 cost
+90k nodes; depth 12 ran for ten minutes without finishing.
+
+The cause was one quiescence call. While in check, quiescence searches
+every evasion, quiet ones included, because standing pat is not a legal
+move. The compiled quiescence had no repetition check and no depth limit
+of its own, only the 96-ply array bound. Two sides that keep evading
+*into* check cycle through the same positions with no capture to end it.
+Instrumented, the node counts per quiescence ply repeat with period four
+from ply 12 to 36, then the cycle's variations multiply until the bound:
+2.7M of 3M nodes went into that one call. The pure-Python quiescence, the
+one the browser build uses, has capped itself at 32 plies since it was
+written, "to prevent pathological perpetual-check cycles". The compiled
+port never got the cap.
+
+What ships (`qsearch_guard = 6`): a position that repeats *within the
+same quiescence call* ends the line with its static evaluation, and so
+does reaching 32 plies below the quiescence entry. Inside quiescence the
+only quiet moves are check evasions, so such a repeat is exactly the
+cycle, and nothing outside the call is touched. In the 2026-10-10
+position depth 12 now costs 0.71M nodes and finds the mate in four within
+the UI's budget. On the 2026-08-17 position and the depth-12 opening
+search it is node-identical to 1.1.1 (1,252,586; 205,998; 2,822,961).
+
+Two forms came first and did not ship. Scoring a repetition 0, as the main
+search does, un-fixed the 2026-08-17 game: a checking cycle scored as a
+draw hands the side being mated a perpetual-check escape that is not on
+the board. Scoring it statically fixed that (mode 3: 53.3% of 60 at 60k;
+10-12 of 22 at 300k when it was stopped),
+but the review of it found that the shared repetition test reaches back
+past the quiescence entry into the main-search line: on 160 stored-game
+positions where it acted, 2,657 of its cuts were against main-search
+ancestors and only 17 inside quiescence, discarding captures, and it
+changed the root move in 3, one clearly for the worse. Mode 6 scans only
+back to the quiescence entry.
+
+Measured against the deployed 1.1.1 engine over the same openings:
+
+| budget | result |
+| --- | --- |
+| 60k nodes | +30 =0 -30 of 60, 50.0%; every one of the 30 pairs was the identical game played twice: the guard never acted |
+| 300k nodes | +29 =0 -31 of 60, 48.3%, -12 elo (pairs CI 45.1..51.6); 27 of 30 pairs identical. The 3 that diverged did so after ply 95, each where the guard cut a cycle and the search reached depth 11 instead of 9; judged at 2M nodes the four diverging moves split two better, two worse. Nodes per move 315,868 vs 315,605 |
+
+What this does not fix, said plainly: in that game the user was already
+lost before the mate in four. HAN's 40th move started a 9-ply mate with
+three quiet attacking moves, and no setting tried sees it from move 40,
+even at 4M nodes. At move 41 every one of CHO's 27 moves is mated. The
+turning point is around moves 35-38, beyond what the engine reads at the
+UI's budget. The quiescence bug was the part that was a bug.
+
 ## 1.1.1 — the published page could not import its own engine
 
 The GitHub Pages build has been dead since 1.0.0 and nothing said so. 1.0.0
