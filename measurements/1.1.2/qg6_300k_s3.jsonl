@@ -1,1 +1,2 @@
 {"seed": 20260832, "a_is_cho": true, "winner": "cho", "plies": 133, "reason": "mate", "a": "qguard=6", "b": "", "budget": {"nodes": 300000, "time": null, "depth": 64}, "spent": {"a": {"nodes": 19379155, "moves": 64, "guard": 0}, "b": {"nodes": 20610323, "moves": 63, "guard": 0}}}
+{"seed": 20260832, "a_is_cho": false, "winner": "cho", "plies": 133, "reason": "mate", "a": "qguard=6", "b": "", "budget": {"nodes": 300000, "time": null, "depth": 64}, "spent": {"a": {"nodes": 20610323, "moves": 63, "guard": 0}, "b": {"nodes": 19379155, "moves": 64, "guard": 0}}}
