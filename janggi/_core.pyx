@@ -1343,12 +1343,64 @@ cdef int _has_null_material(int* piece, int* side, int who):
     return 0
 
 
+# Quiescence guard. While in check, quiescence searches every evasion,
+# quiet ones included, so two sides that keep evading INTO check can cycle
+# through the same positions with no capture to end it. Without a guard that
+# cycle runs to MAXPLY and branches all the way down: in a real lost game
+# (tests/test_regression_games.py) one quiescence call grew past 3.4 million
+# nodes, depth 12 never completed at any budget, and the engine played its
+# depth-11 move into a mate in four. 1 = repetition detection inside
+# quiescence scored as a draw, as the main search does; 2 = that, plus the
+# 32-ply cap the pure-Python quiescence has always had for the same reason;
+# 3 = repetition scored statically, plus the cap; 4 = the 32-ply cap alone;
+# 5 = a 16-ply cap alone; 6 = a repetition within the current quiescence
+# call only, scored statically, plus the cap.
+cdef int g_use_qguard = 0
+cdef int g_qentry_ply = 0
+DEF QPLY_CAP = 32
+
+
+cdef int _q_repetition():
+    """A repetition INSIDE the current quiescence call.
+
+    Scans back no further than the quiescence entry, and never into the game
+    history. Inside quiescence the only quiet moves are check evasions, so a
+    repeated position here is exactly a cycle of evasions -- every move from
+    it was already searched at its first occurrence in this same call -- and
+    the value no longer depends on anything outside the call. The general
+    _is_repetition() also reaches back into the main-search line, which made
+    mode 3 cut lines the unguarded engine searched correctly."""
+    cdef int base = path_irrev[h_top]
+    if base < g_qentry_ply:
+        base = g_qentry_ply
+    cdef int i = h_top - 2
+    while i >= base:
+        if path_hash[i] == cur_hash:
+            return 1
+        i -= 2
+    return 0
+
 cdef int _qsearch(int* piece, int* side, int who, int alpha, int beta, int ply):
     global g_qnodes
     g_qnodes += 1
     if _time_up():
         return 0
+    if (g_use_qguard == 1 or g_use_qguard == 2) and g_use_rep and _is_repetition():
+        return 0
     cdef int stand = _eval_for(piece, side, who)
+    # 3: a repetition ends the cycle with the static score, not a draw score.
+    # Scoring it 0 hands the side being mated a perpetual-check escape that
+    # does not exist on the board (mode 1 un-fixed the 2026-08-17 game).
+    if g_use_qguard == 3 and g_use_rep and _is_repetition():
+        return stand
+    # 6: a repetition within this quiescence call only, scored statically.
+    if g_use_qguard == 6 and _q_repetition():
+        return stand
+    if ((g_use_qguard >= 2 and g_use_qguard <= 4) or g_use_qguard == 6) \
+            and ply - g_qentry_ply >= QPLY_CAP:
+        return stand
+    if g_use_qguard == 5 and ply - g_qentry_ply >= 16:
+        return stand
     # Never index beyond the per-ply move buffer on pathological checking
     # cycles. At the cap the static score is the safest bounded fallback.
     if ply >= MAXPLY - 1:
@@ -1472,6 +1524,8 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
                 return tt_v
 
     if depth <= 0:
+        global g_qentry_ply
+        g_qentry_ply = ply
         return _qsearch(piece, side, who, alpha, beta, ply)
     if ply >= MAXPLY - 2:
         return _eval_for(piece, side, who)
@@ -1854,13 +1908,14 @@ def core_reset(int max_depth, int ext_budget, int use_tt=1, int use_lmr=1,
                long long node_limit=0, int eval_version=2,
                int use_hist_lmr=1, int use_hist_malus=0,
                int use_root_guard=0, int use_mate_threat=0, int use_chk_prune=0,
-               int use_lmr_cap=0, int soltab=0, int mob=0):
+               int use_lmr_cap=0, int soltab=0, int mob=0, int qguard=0):
     """Reset TT / killers / history / stats for a fresh Engine.search()."""
     global g_nodes, g_qnodes, g_tthits, g_timeout, g_ext, g_maxdepth
     global g_use_tt, g_use_lmr, g_use_ext, g_use_nmp, g_use_pvs
     global g_use_fut, g_use_lmp, g_use_asp, g_use_rep, g_node_limit, n_game_hash
     global g_eval_ver, g_use_hist_lmr, g_hist_max, g_use_hist_malus
     global g_use_root_guard, g_use_mate_threat, g_use_chk_prune, g_use_lmr_cap, g_soltab, g_mob
+    global g_use_qguard
     cdef int i
     for i in range(TT_SIZE):
         tt_flag[i] = -1
@@ -1889,6 +1944,7 @@ def core_reset(int max_depth, int ext_budget, int use_tt=1, int use_lmr=1,
     g_use_lmr_cap = use_lmr_cap
     g_soltab = soltab
     g_mob = mob
+    g_use_qguard = qguard
     for i in range(204):
         root_iter[i] = 0
         root_bound[i] = 0
