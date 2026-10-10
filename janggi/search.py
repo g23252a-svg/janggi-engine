@@ -145,11 +145,20 @@ class SearchOptions:
     mate_threat_mode: int = 0       # 0 off; 1 extend + gate (hides proofs); 2 gate only (unreachable, see above)
     use_chk_prune: bool = False     # never futility/LMP-prune a move that gives check
     use_lmr_cap: bool = False       # reduce losing captures too (one ply less than quiets)
-    # Quiescence guard for the compiled core: 0 off; 1 repetition detection
-    # inside quiescence; 2 that plus a 32-ply cap. The pure-Python quiescence
-    # has always capped at 32 plies; the compiled one ran to MAXPLY, and a
-    # cycle of evasions that give check back blew a single call up past 3.4M
-    # nodes in a real lost game (tests/test_regression_games.py).
+    # Quiescence guard for the compiled core. The pure-Python quiescence has
+    # always capped at 32 plies; the compiled one ran to MAXPLY, and a cycle
+    # of evasions that give check back blew a single call up past 3.4M nodes
+    # in a real lost game (tests/test_regression_games.py). Modes:
+    #   0 off
+    #   1 repetition, scored 0 like the main search -- un-fixes 2026-08-17
+    #   2 mode 1 plus a 32-ply cap below the quiescence entry
+    #   3 repetition scored with the static eval, plus the cap. Its check
+    #     reaches back into the main-search line, so it also cut lines the
+    #     unguarded engine searched correctly
+    #   4 the 32-ply cap alone
+    #   5 a 16-ply cap alone
+    #   6 repetition within the current quiescence call only, scored with the
+    #     static eval, plus the cap: acts only where quiescence cycles
     qsearch_guard: int = 0
     soldier_table: int = 0          # 0 = linear advancement bonus, 1 = per-row table
     mobility_weight: int = 0        # centipawns per covered square; 0 = off
@@ -184,6 +193,10 @@ class SearchOptions:
                 raise ValueError(f"unknown search option {key!r}")
             if field_name in ("ext_budget", "node_limit", "eval_version", "soldier_table", "mobility_weight", "mate_threat_mode", "root_guard_mode", "qsearch_guard"):
                 values[field_name] = int(raw)
+                # The core treats an unknown mode as off, so a typo in an A/B
+                # spec would silently measure the unguarded engine.
+                if field_name == "qsearch_guard" and not 0 <= values[field_name] <= 6:
+                    raise ValueError(f"qguard must be 0..6, got {raw!r}")
             else:
                 values[field_name] = raw.strip() not in ("0", "false", "False", "no")
         return cls(**values)

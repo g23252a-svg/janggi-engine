@@ -17,6 +17,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from janggi import Board, Engine, CHO, HAN, SearchOptions  # noqa: E402
+from janggi.search import _HAVE_CORE  # noqa: E402
 
 MATE_BOUND = 1_000_000 - 4096
 
@@ -66,7 +67,7 @@ HOLDS = {(2, 1, 8, 1), (0, 5, 1, 5)}
 SHIPPING_BUDGET = 1_000_000
 
 needs_core = pytest.mark.skipif(
-    os.environ.get("JANGGI_NO_ACCEL") == "1",
+    os.environ.get("JANGGI_NO_ACCEL") == "1" or not _HAVE_CORE,
     reason="needs the compiled core to reach this depth in a bounded node count",
 )
 
@@ -156,7 +157,7 @@ def test_the_deployed_search_is_node_identical():
 # they stay off. Re-enabling any of them means adding it here first.
 SHIPPABLE = ["", DEPLOYED_1_0_0, "histmalus=1", "mthreat=2", "extbudget=4",
              "asp=0", "asp=1", "rootguard=0", "rootguard=1", "rootguard=4",
-             "qguard=3",
+             "qguard=6",
              "rootguard=1,extbudget=4", "asp=0,rootguard=1"]
 PROOF_SWEEP_BUDGET = 400_000
 
@@ -200,24 +201,41 @@ LOST_GAME_2026_10_10_PLY_42 = [
 MATE_IN_FOUR = (4, 8, 1, 8)
 
 
+def _search_2026_10_10(options):
+    board = build(LOST_GAME_2026_10_10_PLY_42)
+    engine = Engine(max_depth=30, options=options)
+    move, score = engine.search(board, HAN, game_ply=41)
+    return engine.stats, move, score
+
+
 @needs_core
 def test_quiescence_cannot_run_away_on_a_cycle_of_checks():
-    """Depth 12 here costs about 0.7M nodes with the guard. Without it the
-    iteration never finishes: 3M nodes in, 2.7M of them are quiescence."""
-    board = build(LOST_GAME_2026_10_10_PLY_42)
-    engine = Engine(max_depth=12, options=SearchOptions(node_limit=SHIPPING_BUDGET))
-    engine.search(board, HAN, game_ply=41)
-    assert engine.stats.depth_reached == 12, (
-        f"depth {engine.stats.depth_reached} after {engine.stats.total_nodes:,} nodes "
-        f"({engine.stats.qnodes:,} in quiescence): a quiescence call is running away"
+    """The symptom, not a depth: with the guard about a third of the budget
+    goes to quiescence (254k of 708k); without it 716k of 1M did, and depth 12
+    never completed. Asserting the depth instead would go red on any later
+    change that proves this mate a ply sooner."""
+    stats, _, score = _search_2026_10_10(SearchOptions(node_limit=SHIPPING_BUDGET))
+    assert stats.qnodes * 2 < stats.total_nodes, (
+        f"{stats.qnodes:,} of {stats.total_nodes:,} nodes in quiescence at depth "
+        f"{stats.depth_reached}: a quiescence call is running away"
     )
+    assert stats.depth_reached >= 12 or score > MATE_BOUND
+
+
+@needs_core
+def test_the_quiescence_guard_reaches_the_core():
+    """qguard is the last positional argument to core_reset; if it stopped
+    arriving, every other test here would still be green under one mode or
+    the other. Off, the runaway is still there; on, it is not."""
+    off, _, _ = _search_2026_10_10(SearchOptions(node_limit=SHIPPING_BUDGET, qsearch_guard=0))
+    on, _, _ = _search_2026_10_10(SearchOptions(node_limit=SHIPPING_BUDGET, qsearch_guard=6))
+    assert off.qnodes * 2 > off.total_nodes and off.depth_reached == 11
+    assert on.qnodes * 2 < on.total_nodes
 
 
 @needs_core
 def test_finds_the_mate_in_four_that_won_a_real_game():
-    board = build(LOST_GAME_2026_10_10_PLY_42)
-    engine = Engine(max_depth=30, options=SearchOptions(node_limit=SHIPPING_BUDGET))
-    move, score = engine.search(board, HAN, game_ply=41)
+    _, move, score = _search_2026_10_10(SearchOptions(node_limit=SHIPPING_BUDGET))
     assert move is not None and move.as_tuple() == MATE_IN_FOUR, (
         f"played {move.as_tuple() if move else None} with score {score}; "
         f"{MATE_IN_FOUR} mates in four"
