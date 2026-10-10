@@ -145,6 +145,12 @@ class SearchOptions:
     mate_threat_mode: int = 0       # 0 off; 1 extend + gate (hides proofs); 2 gate only (unreachable, see above)
     use_chk_prune: bool = False     # never futility/LMP-prune a move that gives check
     use_lmr_cap: bool = False       # reduce losing captures too (one ply less than quiets)
+    # Quiescence guard for the compiled core: 0 off; 1 repetition detection
+    # inside quiescence; 2 that plus a 32-ply cap. The pure-Python quiescence
+    # has always capped at 32 plies; the compiled one ran to MAXPLY, and a
+    # cycle of evasions that give check back blew a single call up past 3.4M
+    # nodes in a real lost game (tests/test_regression_games.py).
+    qsearch_guard: int = 0
     soldier_table: int = 0          # 0 = linear advancement bonus, 1 = per-row table
     mobility_weight: int = 0        # centipawns per covered square; 0 = off
 
@@ -157,7 +163,7 @@ class SearchOptions:
         "eval": "eval_version",
         "histlmr": "use_hist_lmr",
         "histmalus": "use_hist_malus",
-        "rootguard": "root_guard_mode", "mthreat": "mate_threat_mode", "chkprune": "use_chk_prune",
+        "rootguard": "root_guard_mode", "mthreat": "mate_threat_mode", "chkprune": "use_chk_prune", "qguard": "qsearch_guard",
         "lmrcap": "use_lmr_cap", "soltab": "soldier_table", "mob": "mobility_weight",
     }
 
@@ -176,7 +182,7 @@ class SearchOptions:
             field_name = cls._ALIASES.get(key, key)
             if field_name not in cls.__dataclass_fields__:
                 raise ValueError(f"unknown search option {key!r}")
-            if field_name in ("ext_budget", "node_limit", "eval_version", "soldier_table", "mobility_weight", "mate_threat_mode", "root_guard_mode"):
+            if field_name in ("ext_budget", "node_limit", "eval_version", "soldier_table", "mobility_weight", "mate_threat_mode", "root_guard_mode", "qsearch_guard"):
                 values[field_name] = int(raw)
             else:
                 values[field_name] = raw.strip() not in ("0", "false", "False", "no")
@@ -313,6 +319,7 @@ class Engine:
             1 if opts.use_lmr_cap else 0,
             opts.soldier_table,
             opts.mobility_weight,
+            opts.qsearch_guard,
         )
         deadline = (time.time() + self.time_limit) if self.time_limit else 0.0
         frm, to, cap, score, depth, pv = core_search(

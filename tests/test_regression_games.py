@@ -125,7 +125,7 @@ def test_the_fail_low_extension_fires_once_and_at_most_doubles_the_budget():
 
 
 DEPLOYED_1_0_0 = ("asp=1,rootguard=0,extbudget=3,histmalus=0,mthreat=0,"
-                  "chkprune=0,lmrcap=0,soltab=0,mob=0")
+                  "chkprune=0,lmrcap=0,soltab=0,mob=0,qguard=0")
 DEPLOYED_1_0_0_DEPTH12_NODES = 2_822_961
 
 
@@ -156,6 +156,7 @@ def test_the_deployed_search_is_node_identical():
 # they stay off. Re-enabling any of them means adding it here first.
 SHIPPABLE = ["", DEPLOYED_1_0_0, "histmalus=1", "mthreat=2", "extbudget=4",
              "asp=0", "asp=1", "rootguard=0", "rootguard=1", "rootguard=4",
+             "qguard=3",
              "rootguard=1,extbudget=4", "asp=0,rootguard=1"]
 PROOF_SWEEP_BUDGET = 400_000
 
@@ -174,3 +175,51 @@ def test_no_shippable_configuration_hides_the_fifteen_ply_mate(spec):
         f"{spec or 'defaults'}: CHO scored {score} instead of proving the mate "
         f"within {PROOF_SWEEP_BUDGET:,} nodes"
     )
+
+
+# Game of 2026-10-10 (5a2f96e5), HAN to move after 41 plies. HAN mates in four:
+# 차 (4,8)->(1,8), then (1,8)->(1,5), then takes on the file twice. The user
+# played CHO and had followed the engine for 20 of 24 moves; the opponent found
+# the mate. As HAN, the 1.1.1 engine never saw it at any budget -- not at 10M
+# nodes -- because it never completed depth 12 here: one quiescence call
+# followed a cycle of evasions that give check back, with no repetition check
+# and no depth cap, and grew past 3.4 million nodes before the clock or the
+# node limit stopped it. The search then fell back to its depth-11 move.
+LOST_GAME_2026_10_10_PLY_42 = [
+    [("C", "han"), None, None, ("G", "han"), None, ("G", "han"), ("P", "cho"), None, None],
+    [None, None, None, None, ("K", "han"), None, None, None, None],
+    [None, ("P", "han"), None, None, ("P", "han"), None, None, None, None],
+    [None, ("J", "han"), None, None, None, None, None, ("J", "han"), None],
+    [None, None, None, ("M", "han"), None, None, None, None, ("C", "han")],
+    [None, None, None, None, None, None, None, None, None],
+    [("J", "cho"), None, ("M", "cho"), ("M", "han"), None, None, ("M", "cho"), None, ("J", "cho")],
+    [None, None, None, None, None, None, None, None, None],
+    [None, None, None, None, None, ("K", "cho"), None, None, None],
+    [("C", "cho"), None, None, ("G", "cho"), ("P", "cho"), ("G", "cho"), ("S", "cho"), None, ("C", "cho")],
+]
+MATE_IN_FOUR = (4, 8, 1, 8)
+
+
+@needs_core
+def test_quiescence_cannot_run_away_on_a_cycle_of_checks():
+    """Depth 12 here costs about 0.7M nodes with the guard. Without it the
+    iteration never finishes: 3M nodes in, 2.7M of them are quiescence."""
+    board = build(LOST_GAME_2026_10_10_PLY_42)
+    engine = Engine(max_depth=12, options=SearchOptions(node_limit=SHIPPING_BUDGET))
+    engine.search(board, HAN, game_ply=41)
+    assert engine.stats.depth_reached == 12, (
+        f"depth {engine.stats.depth_reached} after {engine.stats.total_nodes:,} nodes "
+        f"({engine.stats.qnodes:,} in quiescence): a quiescence call is running away"
+    )
+
+
+@needs_core
+def test_finds_the_mate_in_four_that_won_a_real_game():
+    board = build(LOST_GAME_2026_10_10_PLY_42)
+    engine = Engine(max_depth=30, options=SearchOptions(node_limit=SHIPPING_BUDGET))
+    move, score = engine.search(board, HAN, game_ply=41)
+    assert move is not None and move.as_tuple() == MATE_IN_FOUR, (
+        f"played {move.as_tuple() if move else None} with score {score}; "
+        f"{MATE_IN_FOUR} mates in four"
+    )
+    assert score > MATE_BOUND
