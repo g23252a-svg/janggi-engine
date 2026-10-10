@@ -1,0 +1,1 @@
+{"seed": 20260832, "a_is_cho": true, "winner": "cho", "plies": 149, "reason": "stalemate", "a": "qguard=3", "b": "", "budget": {"nodes": 300000, "time": null, "depth": 64}, "spent": {"a": {"nodes": 21211557, "moves": 72, "guard": 0}, "b": {"nodes": 22579504, "moves": 71, "guard": 0}}}
