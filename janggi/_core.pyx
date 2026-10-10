@@ -1353,10 +1353,32 @@ cdef int _has_null_material(int* piece, int* side, int who):
 # quiescence scored as a draw, as the main search does; 2 = that, plus the
 # 32-ply cap the pure-Python quiescence has always had for the same reason;
 # 3 = repetition scored statically, plus the cap; 4 = the 32-ply cap alone;
-# 5 = a 16-ply cap alone.
+# 5 = a 16-ply cap alone; 6 = a repetition within the current quiescence
+# call only, scored statically, plus the cap.
 cdef int g_use_qguard = 0
 cdef int g_qentry_ply = 0
 DEF QPLY_CAP = 32
+
+
+cdef int _q_repetition():
+    """A repetition INSIDE the current quiescence call.
+
+    Scans back no further than the quiescence entry, and never into the game
+    history. Inside quiescence the only quiet moves are check evasions, so a
+    repeated position here is exactly a cycle of evasions -- every move from
+    it was already searched at its first occurrence in this same call -- and
+    the value no longer depends on anything outside the call. The general
+    _is_repetition() also reaches back into the main-search line, which made
+    mode 3 cut lines the unguarded engine searched correctly."""
+    cdef int base = path_irrev[h_top]
+    if base < g_qentry_ply:
+        base = g_qentry_ply
+    cdef int i = h_top - 2
+    while i >= base:
+        if path_hash[i] == cur_hash:
+            return 1
+        i -= 2
+    return 0
 
 cdef int _qsearch(int* piece, int* side, int who, int alpha, int beta, int ply):
     global g_qnodes
@@ -1371,7 +1393,11 @@ cdef int _qsearch(int* piece, int* side, int who, int alpha, int beta, int ply):
     # does not exist on the board (mode 1 un-fixed the 2026-08-17 game).
     if g_use_qguard == 3 and g_use_rep and _is_repetition():
         return stand
-    if g_use_qguard >= 2 and g_use_qguard <= 4 and ply - g_qentry_ply >= QPLY_CAP:
+    # 6: a repetition within this quiescence call only, scored statically.
+    if g_use_qguard == 6 and _q_repetition():
+        return stand
+    if ((g_use_qguard >= 2 and g_use_qguard <= 4) or g_use_qguard == 6) \
+            and ply - g_qentry_ply >= QPLY_CAP:
         return stand
     if g_use_qguard == 5 and ply - g_qentry_ply >= 16:
         return stand
