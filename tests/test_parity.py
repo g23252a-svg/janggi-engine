@@ -376,3 +376,50 @@ def test_evaluator_v2_is_deterministic_and_antisymmetric():
         direct = core.core_eval(board._pc, board._sd, 0, 2)
         flipped = core.core_eval(mirrored._pc, mirrored._sd, 0, 2)
         assert direct == -flipped, f"v2 is not side-symmetric: {direct} vs {flipped}"
+
+
+def _mirror(board):
+    mirrored = Board()
+    for r in range(ROWS):
+        for c in range(COLS):
+            p = board.grid[r][c]
+            if p is not None:
+                mirrored.grid[ROWS - 1 - r][c] = (p[0], -p[1])
+    return mirrored
+
+
+@pytest.mark.parametrize("base_ply, knobs", [
+    (100, {"lockscale": 2}), (130, {"lockscale": 2}),
+    (0, {"ksafe": 1}), (0, {"ksafe": 2}), (130, {"lockscale": 2, "ksafe": 1}),
+])
+def test_campaign_eval_flags_keep_v2_antisymmetric(base_ply, knobs):
+    """lockscale=2 divides the score by the lock factor past ply 80 (a C
+    division, which truncates toward zero) and ksafe adds palace units; the
+    score must still flip sign with the board. The knobs must also act, or
+    this test would pass on a flag that never reaches the evaluator."""
+    core = pytest.importorskip("janggi._core")
+    changed = 0
+    # Longer random games than the plain test: palaces come under fire only
+    # late, and 60 short ones never trigger a palace unit.
+    for board in random_positions(120, seed=1234, max_plies=120):
+        mirrored = _mirror(board)
+        direct = core.core_eval(board._pc, board._sd, base_ply, 2, **knobs)
+        flipped = core.core_eval(mirrored._pc, mirrored._sd, base_ply, 2, **knobs)
+        assert direct == -flipped, f"{knobs} at ply {base_ply}: {direct} vs {flipped}"
+        changed += direct != core.core_eval(board._pc, board._sd, base_ply, 2)
+    assert changed > 0, f"{knobs} changed no evaluation"
+
+
+def test_core_eval_does_not_inherit_a_searchs_campaign_flags():
+    """core_reset sets the evaluator's lockscale / ksafe for a search; a direct
+    evaluate() afterwards must still be the plain evaluator."""
+    core = pytest.importorskip("janggi._core")
+    board = Board.standard()
+    board.grid[9][0] = None          # a material imbalance, so the lock acts
+    plain = core.core_eval(board._pc, board._sd, 130, 2)
+    assert core.core_eval(board._pc, board._sd, 130, 2, lockscale=2, ksafe=1) != plain
+    core.core_reset(4, 3, lockscale=2, ksafe=1)
+    try:
+        assert core.core_eval(board._pc, board._sd, 130, 2) == plain
+    finally:
+        core.core_reset(4, 3)

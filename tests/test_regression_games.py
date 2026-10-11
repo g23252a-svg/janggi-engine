@@ -157,10 +157,16 @@ def test_the_deployed_search_is_node_identical():
 # rejected (lmrcap, mob, soltab, chkprune, mthreat=1) are not listed -- some of
 # them hide this proof at some budgets and defaults, which is one more reason
 # they stay off. Re-enabling any of them means adding it here first.
+#
+# The 1.2 campaign flags (all off by default) are listed when they also keep
+# the 2026-08-17 hold and the 2026-10-10 mate in four at the UI's budget.
+# nullchk=1|2 and ksafe=1|2 hold this proof as well, but at one million nodes
+# they play the fatal (0,5,1,4) in the 2026-08-17 position, so they are not.
 SHIPPABLE = ["", DEPLOYED_1_0_0, "histmalus=1", "mthreat=2", "extbudget=4",
              "asp=0", "asp=1", "rootguard=0", "rootguard=1", "rootguard=4",
              "qguard=6",
-             "rootguard=1,extbudget=4", "asp=0,rootguard=1"]
+             "rootguard=1,extbudget=4", "asp=0,rootguard=1",
+             "lockscale=1", "lockscale=2", "tteval=1", "rootfh=1"]
 PROOF_SWEEP_BUDGET = 400_000
 
 
@@ -236,6 +242,40 @@ def test_the_quiescence_guard_reaches_the_core():
     on, _, _ = _search_2026_10_10(SearchOptions(**base, qsearch_guard=6))
     assert off.qnodes * 2 > off.total_nodes and off.depth_reached == 11
     assert on.qnodes * 2 < on.total_nodes
+
+
+CAMPAIGN_FLAGS = ["lockscale=1", "lockscale=2", "nullchk=1", "nullchk=2",
+                  "tteval=1", "rootfh=1", "ksafe=1", "ksafe=2"]
+
+
+def test_the_campaign_flags_parse_and_reject_unknown_modes():
+    opts = SearchOptions.parse("lockscale=2,nullchk=1,tteval=1,rootfh=1,ksafe=2")
+    assert (opts.lock_scale, opts.null_check_guard, opts.tt_eval,
+            opts.root_fail_high, opts.king_safety) == (2, 1, 1, True, 2)
+    off = SearchOptions()
+    assert (off.lock_scale, off.null_check_guard, off.tt_eval,
+            off.root_fail_high, off.king_safety) == (0, 0, 0, False, 0)
+    # The core treats an unknown mode as off: a typo must not silently
+    # measure the unchanged engine.
+    for bad in ("lockscale=3", "nullchk=3", "tteval=2", "ksafe=3", "ksafe=-1"):
+        with pytest.raises(ValueError):
+            SearchOptions.parse(bad)
+
+
+@needs_core
+@pytest.mark.parametrize("spec", CAMPAIGN_FLAGS)
+def test_each_campaign_flag_reaches_the_core(spec):
+    """The campaign flags travel to core_reset by keyword. Each must change
+    the search somewhere it can act, or every A/B of it would quietly measure
+    the unchanged engine. The 2026-08-17 position, searched as if 100 plies
+    into the game so the endgame lock (and lockscale with it) is live."""
+    def run(spec):
+        opts = SearchOptions.parse(spec)
+        opts = SearchOptions(**{**opts.__dict__, "node_limit": 60_000, "root_guard_mode": 0})
+        engine = Engine(max_depth=30, options=opts)
+        move, score = engine.search(build(LOST_GAME_PLY_54), HAN, game_ply=100)
+        return move.as_tuple(), score, engine.stats.depth_reached, engine.stats.nodes
+    assert run(spec) != run("")
 
 
 @needs_core
