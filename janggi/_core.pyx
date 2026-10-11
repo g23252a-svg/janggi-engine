@@ -211,6 +211,13 @@ cdef int KDANGER[8]
 KDANGER[0]=0; KDANGER[1]=40; KDANGER[2]=30; KDANGER[3]=20
 KDANGER[4]=10; KDANGER[5]=10; KDANGER[6]=0; KDANGER[7]=5
 
+# Palace safety units (ksafe). 0 off; 1 palace units added to king danger;
+# 2 = mode 1 without the v1 general-exposure term. KFORCE is the attacking
+# force a piece brings against the enemy palace: chariot 2, cannon 1, horse 1.
+cdef int g_ksafe = 0
+cdef int KFORCE[8]
+KFORCE[0]=0; KFORCE[1]=2; KFORCE[2]=1; KFORCE[3]=1; KFORCE[4]=0; KFORCE[5]=0; KFORCE[6]=0; KFORCE[7]=0
+
 # ------------------------------------------------------------- attack maps
 # _attacked() answers one square at a time by scanning outward from it. The
 # evaluator asks ~70 such questions per call (every piece for the loose-piece
@@ -963,10 +970,45 @@ cdef inline int _eleph_free_legs(int* piece, int r, int c):
     return free
 
 
+cdef int _palace_units(int* piece, int* side, int* amap, int gr, int gc,
+                       int s, int guards, int force, int raw):
+    """ksafe: extra king-danger units for side s's general on (gr, gc).
+
+    Flight squares (palace neighbours along palace lines, not occupied by an
+    own piece) that the enemy bears on, missing guards weighted by the enemy
+    force once that force bears on the palace, and a fully covered general."""
+    cdef int eb = (2 - s) * 90            # enemy half of amap: amap[(s-1)*90+sq] = side s attacks
+    cdef int dr, dc, nr, nc, idx, att = 0, free = 0, u
+    for dr in range(-1, 2):
+        for dc in range(-1, 2):
+            if dr == 0 and dc == 0:
+                continue
+            nr = gr + dr; nc = gc + dc
+            if not _in_palace(nr, nc, s):
+                continue
+            if dr != 0 and dc != 0 and not (_is_pdiag(gr, gc) and _is_pdiag(nr, nc)):
+                continue                  # diagonal steps only along palace lines
+            idx = nr * COLS + nc
+            if piece[idx] != 0 and side[idx] == s:
+                continue                  # own piece: not a flight square
+            if amap[eb + idx]:
+                att += 1
+            else:
+                free += 1
+    if force > 6:
+        force = 6
+    u = 30 * att
+    if raw >= 40 or att > 0:              # guards matter in proportion to the force once it bears on the palace
+        u += 20 * (2 - guards) * force
+    if att > 0 and free == 0:
+        u += 40                           # every flight square is covered
+    return u
+
+
 cdef int _evaluate2(int* piece, int* side):
     """HAN-positive static score. See the block comment above."""
     cdef int score = 0, material = 0, phase_mat = 0
-    cdef int r, c, idx, pc, s, base, v, adv, i, d, nr, nc
+    cdef int r, c, idx, pc, s, base, v, adv, i, d, nr, nc, lk
     cdef int ghr = -1, ghc = -1, gcr = -1, gcc = -1
     cdef int amap[180]
     cdef int awt[180]
@@ -974,6 +1016,8 @@ cdef int _evaluate2(int* piece, int* side):
     cdef int occ_file[9]           # any piece on the file (for open-file chariots)
     cdef int phase, freelegs, danger_h = 0, danger_c = 0
     cdef int cov_h = 0, cov_c = 0
+    cdef int ng[2]                 # ksafe: guards per side
+    cdef int force[2]              # ksafe: attacking force per side (KFORCE)
     cdef int ORTH[4][2]
     ORTH[0][0]=1; ORTH[0][1]=0; ORTH[1][0]=-1; ORTH[1][1]=0
     ORTH[2][0]=0; ORTH[2][1]=1; ORTH[3][0]=0; ORTH[3][1]=-1
@@ -981,21 +1025,45 @@ cdef int _evaluate2(int* piece, int* side):
     for c in range(9):
         sol_file[0][c] = 0; sol_file[1][c] = 0; occ_file[c] = 0
 
-    for idx in range(90):
-        pc = piece[idx]
-        if pc == 0:
-            continue
-        s = side[idx]
-        occ_file[idx % COLS] += 1
-        if pc != 6:
-            phase_mat += PVAL[pc]
-        if pc == 5:
-            sol_file[s-1][idx % COLS] += 1
-        if pc == 6:
-            if s == 1:
-                ghr = idx // COLS; ghc = idx % COLS
-            else:
-                gcr = idx // COLS; gcc = idx % COLS
+    if g_ksafe:
+        # The same scan, also counting ksafe's guards and attacking force.
+        # Unswitched by hand so that with the flag off this, the evaluator's
+        # hottest loop, carries no per-piece test.
+        ng[0] = 0; ng[1] = 0; force[0] = 0; force[1] = 0
+        for idx in range(90):
+            pc = piece[idx]
+            if pc == 0:
+                continue
+            s = side[idx]
+            force[s-1] += KFORCE[pc]
+            if pc == 7:
+                ng[s-1] += 1      # guards cannot leave the palace: palace guards
+            occ_file[idx % COLS] += 1
+            if pc != 6:
+                phase_mat += PVAL[pc]
+            if pc == 5:
+                sol_file[s-1][idx % COLS] += 1
+            if pc == 6:
+                if s == 1:
+                    ghr = idx // COLS; ghc = idx % COLS
+                else:
+                    gcr = idx // COLS; gcc = idx % COLS
+    else:
+        for idx in range(90):
+            pc = piece[idx]
+            if pc == 0:
+                continue
+            s = side[idx]
+            occ_file[idx % COLS] += 1
+            if pc != 6:
+                phase_mat += PVAL[pc]
+            if pc == 5:
+                sol_file[s-1][idx % COLS] += 1
+            if pc == 6:
+                if s == 1:
+                    ghr = idx // COLS; ghc = idx % COLS
+                else:
+                    gcr = idx // COLS; gcc = idx % COLS
 
     phase = (phase_mat * 256) // PHASE_TOTAL
     if phase > 256:
@@ -1081,24 +1149,38 @@ cdef int _evaluate2(int* piece, int* side):
                 danger_h += awt[90 + idx]
             elif _in_palace(r, c, 2):
                 danger_c += awt[idx]
-    score -= (danger_h * danger_h) // 900
-    score += (danger_c * danger_c) // 900
+    if g_ksafe:
+        # ksafe: palace units go inside the square. danger_h / danger_c are
+        # the raw attack weights on each palace, the helper's `raw`; guards
+        # and force were counted in the first scan.
+        if ghr >= 0:
+            danger_h += _palace_units(piece, side, amap, ghr, ghc, 1, ng[0], force[1], danger_h)
+        if gcr >= 0:
+            danger_c += _palace_units(piece, side, amap, gcr, gcc, 2, ng[1], force[0], danger_c)
+        v = (danger_h * danger_h) // 900
+        score -= v if v < 800 else 800
+        v = (danger_c * danger_c) // 900
+        score += v if v < 800 else 800
+    else:
+        score -= (danger_h * danger_h) // 900
+        score += (danger_c * danger_c) // 900
 
-    # --- general exposure (v1 term, kept) --------------------------------
-    if ghr >= 0:
-        v = 0
-        for d in range(4):
-            nr = ghr + ORTH[d][0]; nc = ghc + ORTH[d][1]
-            if _in_palace(nr, nc, 1) and piece[nr*COLS+nc] == 0:
-                v += 1
-        score -= v * 12
-    if gcr >= 0:
-        v = 0
-        for d in range(4):
-            nr = gcr + ORTH[d][0]; nc = gcc + ORTH[d][1]
-            if _in_palace(nr, nc, 2) and piece[nr*COLS+nc] == 0:
-                v += 1
-        score += v * 12
+    # --- general exposure (v1 term, kept; ksafe=2 drops it) ---------------
+    if g_ksafe != 2:
+        if ghr >= 0:
+            v = 0
+            for d in range(4):
+                nr = ghr + ORTH[d][0]; nc = ghc + ORTH[d][1]
+                if _in_palace(nr, nc, 1) and piece[nr*COLS+nc] == 0:
+                    v += 1
+            score -= v * 12
+        if gcr >= 0:
+            v = 0
+            for d in range(4):
+                nr = gcr + ORTH[d][0]; nc = gcc + ORTH[d][1]
+                if _in_palace(nr, nc, 2) and piece[nr*COLS+nc] == 0:
+                    v += 1
+            score += v * 12
 
     # --- loose pieces (v1 term, kept) ------------------------------------
     cdef int risk_h = 0, risk_c = 0
@@ -1117,10 +1199,11 @@ cdef int _evaluate2(int* piece, int* side):
     score += risk_c
 
     # --- endgame lock onto official points --------------------------------
-    if g_base_ply >= 120:
-        score += material * 2
-    elif g_base_ply >= 80:
-        score += material
+    if g_lockscale != 2:
+        if g_base_ply >= 120:
+            score += material * 2
+        elif g_base_ply >= 80:
+            score += material
     if g_mob:
         # Coverage-based mobility: squares each side bears on, minus the ones
         # its own pieces stand on (bearing on your own piece is defence, not
@@ -1131,6 +1214,13 @@ cdef int _evaluate2(int* piece, int* side):
             if amap[90 + i] and side[i] != 2:
                 cov_c += 1
         score += g_mob * (cov_h - cov_c)
+    if g_lockscale == 2 and g_base_ply >= 80:
+        # lockscale=2: deployed_score / lk -- the same ranking as the lock,
+        # but material stays at 1x PVAL, so every PVAL-unit margin in the
+        # search (delta pruning, futility, RFP) means what it says again.
+        # cdivision: // truncates toward zero, so colour symmetry holds.
+        lk = 3 if g_base_ply >= 120 else 2
+        score = material + (score - material) // lk
     return score
 
 
@@ -1215,6 +1305,13 @@ cdef int g_use_mate_threat = 0  # mate-threat mode: 0 off; 1 extend + gate pruni
                                 # side grows the attacker's tree past the budget: +2072 instead of mate
                                 # at 300k on the lost-game position), so it is never the default.
 cdef int g_use_chk_prune = 0    # never futility/LMP-prune a move that gives check
+cdef int g_use_nullchk = 0        # 1: the node answering a null move keeps its quiet checks; 2: also that side's next node
+cdef long long g_nullchk_kept = 0
+# tteval: a stored TT bound replaces static_eval for RFP, the NMP gate and
+# futility (exact, lower above static, upper below static), plus the
+# futility fail-soft floor.
+cdef int g_use_tteval = 0
+cdef long long g_tteval_used = 0
 cdef int g_use_lmr_cap = 0      # reduce losing (SEE-negative) captures too, one ply less than quiets
 cdef int g_soltab = 0           # 0: soldier advancement linear adv*8; 1: per-row table
 # Mobility weight, 0 = off. The compiled evaluator had no mobility term at all:
@@ -1225,6 +1322,21 @@ cdef int g_soltab = 0           # 0: soldier advancement linear adv*8; 1: per-ro
 # that are not occupied by its own pieces -- so the cost is one pass over 180
 # ints, not a move generation.
 cdef int g_mob = 0
+# Scale-consistent endgame lock (lockscale). From ply 80 the evaluator adds the
+# material sum again (x2 at 80, x3 at 120), but every PVAL-unit margin in the
+# search stays 1x -- qsearch delta pruning then drops recaptures it should
+# search. 1: the delta margin is counted in lock units; 2: the eval is divided
+# by the lock factor, so material stays at 1x PVAL.
+cdef int g_lockscale = 0   # 0 off; 1 delta margin in lock units; 2 eval / lock factor
+cdef int g_lockk = 1       # factor on the qsearch delta margin; 1 unless lockscale == 1 and base ply >= 80
+cdef inline void _set_lockk():
+    global g_lockk
+    g_lockk = 1
+    if g_lockscale == 1:
+        if g_base_ply >= 120:
+            g_lockk = 3
+        elif g_base_ply >= 80:
+            g_lockk = 2
 # Soldier value by distance advanced (index = adv, 0..9). Linear adv*8 made the
 # most valuable soldier on the board one standing on the enemy back rank, where
 # it can only shuffle sideways and attacks nothing -- and soldiers cannot
@@ -1234,6 +1346,10 @@ cdef int g_mob = 0
 cdef int SOLTAB1[10]
 SOLTAB1[:] = [0, 0, 0, 0, 8, 18, 32, 40, 24, 4]
 cdef int root_iter[204]         # the depth at which root_score[i] was last written
+# rootfh: a root move that fails high above the aspiration window goes first in
+# the widened redo, and is kept if the redo times out inside it.
+cdef int g_use_rootfh = 0
+cdef long long g_rootfh_rot = 0, g_rootfh_kept = 0
 DEF HMAX = 16384
 
 # Repetition: hashes along the current search line plus the hashes of game
@@ -1445,8 +1561,9 @@ cdef int _qsearch(int* piece, int* side, int who, int alpha, int beta, int ply):
         fr = buf[m*5]; fc = buf[m*5+1]; tr = buf[m*5+2]; tc = buf[m*5+3]; cap = buf[m*5+4]
         if not in_chk:
             # Delta pruning: even winning this piece outright cannot lift the
-            # score to alpha, so the whole capture is irrelevant.
-            if cap != 6 and stand + PVAL[cap] + 200 < alpha:
+            # score to alpha, so the whole capture is irrelevant. g_lockk is
+            # the endgame lock's material factor under lockscale=1, else 1.
+            if cap != 6 and stand + g_lockk * PVAL[cap] + 200 < alpha:
                 continue
             # SEE pruning is safe for optional captures, never for forced
             # evasions. A capture whose victim is worth at least as much as the
@@ -1481,6 +1598,7 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
                   int ply, int is_pv, int can_null):
     global g_hist_max
     global g_nodes, g_tthits, g_ext
+    global g_nullchk_kept, g_tteval_used
     g_nodes += 1
     if _time_up():
         return 0
@@ -1501,9 +1619,11 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
     cdef unsigned long long key = cur_hash
     cdef int slot = <int>(key & TT_MASK)
     cdef int tt_move = -1
-    cdef int tt_v, tt_f
+    cdef int tt_v, tt_f, tte_v = 0, tte_f = -1
     if g_use_tt and tt_flag[slot] >= 0 and tt_key[slot] == key:
         tt_move = tt_best[slot]
+        # tteval: the entry at any depth, for the pruning eval below.
+        tte_f = tt_flag[slot]; tte_v = tt_val[slot]
         if tt_depth[slot] >= depth and not is_pv:
             tt_v = tt_val[slot]
             # Mate scores are stored relative to the storing node; rebase them
@@ -1537,6 +1657,17 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
 
     if not in_chk:
         static_eval = _eval_for(piece, side, who)
+        if (g_use_tteval and tte_f >= 0
+                and tte_v > -MATE_BOUND and tte_v < MATE_BOUND
+                and not (tte_f == 0 and tte_v == 0)        # stored repetition draws are path-dependent
+                and (tte_f == 0
+                     or (tte_f == 1 and tte_v > static_eval)    # lower bound above static
+                     or (tte_f == 2 and tte_v < static_eval))): # upper bound below static
+            # tteval: the searched value is a better estimate than the static
+            # one for every reader below (RFP, the NMP gate, futility); none of
+            # them runs at PV nodes. Mate values are excluded, so no rebase.
+            static_eval = tte_v
+            g_tteval_used += 1
 
         # Reverse futility: so far ahead that giving up a chunk per remaining
         # ply still beats beta.
@@ -1663,9 +1794,16 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
     cdef int hb, hj, hidx
     cdef int fut_margin = 0
     cdef int played = 0          # legal moves actually searched at this node
+    cdef int keep_chk = 0        # nullchk: quiet checks are never pruned at this node
+    cdef int fut_floor = -MATE * 2   # tteval: fail-soft floor from futility-pruned moves
     quiets = 0
     if g_use_fut and not in_chk and not is_pv and depth <= 3:
         fut_margin = static_eval + 120 * depth + 180
+    if g_use_nullchk and h_top > 0 and (h_fr[h_top-1] < 0
+            or (g_use_nullchk == 2 and h_top > 2 and h_fr[h_top-3] < 0)):
+        # This node answers the opponent's pass: its quiet checks are the
+        # threat NMP is asking about, so they are never pruned here.
+        keep_chk = 1
 
     for i in range(nl):
         m = legal[i]
@@ -1682,7 +1820,10 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
             elif (fut_margin != 0 and fut_margin <= alpha
                     and best_score > -MATE_BOUND):
                 would_prune = 1
-        if would_prune and not g_use_chk_prune:
+        if would_prune and not g_use_chk_prune and not keep_chk:
+            if g_use_tteval and fut_margin != 0 and fut_margin <= alpha:
+                # tteval: Stockfish's futility floor, applied after the loop.
+                fut_floor = fut_margin
             quiets += 1
             continue
 
@@ -1697,10 +1838,15 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
             # so whether it gives check was unknown. A checking move is never a
             # "quiet move that cannot reach alpha" -- 1,477 mate-in-one moves
             # were pruned this way in one search of the lost-game position.
+            # nullchk takes the same path, at the node answering a pass only.
             if not gives_check:
+                if g_use_tteval and fut_margin != 0 and fut_margin <= alpha:
+                    fut_floor = fut_margin
                 _unmake(piece, side)
                 quiets += 1
                 continue
+            if keep_chk:
+                g_nullchk_kept += 1
         if cap == 0:
             quiets += 1
             if g_use_hist_malus and n_tried < 204:
@@ -1816,6 +1962,16 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
         # Pruning never fires while best_move is unset, so this really is
         # "no legal move" -- which loses in Janggi, checked or not.
         return -MATE + ply
+    # tteval: a futility-pruned move was credited with fut_margin <= alpha, so
+    # the fail-soft upper bound is at least that. fut_floor <= alpha at the
+    # time it was set, and when it exceeds best_score no searched move raised
+    # alpha, so no cutoff, alpha or best_move changes and the flag stays what
+    # it would be for any best_score in (best_score, alpha] -- an upper bound
+    # unless a TT lower bound had already lifted alpha above alpha_orig.
+    # Same value as Stockfish's in-loop `bestValue = futilityValue`; applied
+    # here so best_move (score > best_score) still tracks searched moves only.
+    if best_score < fut_floor:
+        best_score = fut_floor
 
     cdef signed char flag = 0
     if best_score <= alpha_orig:
@@ -1841,8 +1997,10 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
 
 # ------------------------------------------------------------------- root
 cdef int _root_iteration(int* piece, int* side, int who, int depth,
-                         int alpha, int beta, int* best_idx):
-    """Search every root move at `depth`; fill root_score and return the best."""
+                         int alpha, int beta, int* best_idx, int pv_idx):
+    """Search every root move at `depth`; fill root_score and return the best.
+    pv_idx is where the move about to be played sits: 0, unless rootfh has
+    rotated a fail-high in front of it."""
     cdef int i, fr, fc, tr, tc, score, best = -MATE * 2
     cdef int a = alpha
     best_idx[0] = -1
@@ -1852,23 +2010,24 @@ cdef int _root_iteration(int* piece, int* side, int who, int depth,
         _make(piece, side, fr, fc, tr, tc)
         if i == 0 or not g_use_pvs:
             score = -_negamax(piece, side, 3 - who, depth - 1, -beta, -a, 1, 1, 1)
-            if (i == 0 and score <= a and a > -MATE * 2 and not g_timeout
-                    and (g_use_root_guard == 1
-                         or (g_use_root_guard == 2 and _late_in_budget()))):
-                # rootguard, under an aspiration window. The PV move just
-                # failed low, and a fail-low is a BOUND: it says "worse than
-                # alpha", never "lost by force", so the guard could not act on
-                # it and the whole depth would be redone with a wider window
-                # that the clock may not allow. Re-search this one move with
-                # the floor removed so the score is exact. If it is a proven
-                # loss the guard has what it needs; if not, the redo starts
-                # from a real number instead of a bound. The cost is one
-                # extra root search that the redo was about to do anyway.
-                score = -_negamax(piece, side, 3 - who, depth - 1, -beta, MATE * 2, 1, 1, 1)
         else:
             score = -_negamax(piece, side, 3 - who, depth - 1, -a - 1, -a, 1, 0, 1)
             if score > a and score < beta and not g_timeout:
                 score = -_negamax(piece, side, 3 - who, depth - 1, -beta, -a, 1, 1, 1)
+        if (i == pv_idx and score <= alpha and alpha > -MATE * 2 and not g_timeout
+                and (g_use_root_guard == 1
+                     or (g_use_root_guard == 2 and _late_in_budget()))):
+            # rootguard, under an aspiration window. The PV move just
+            # failed low, and a fail-low is a BOUND: it says "worse than
+            # alpha", never "lost by force", so the guard could not act on
+            # it and the whole depth would be redone with a wider window
+            # that the clock may not allow. Re-search this one move with
+            # the floor removed so the score is exact. If it is a proven
+            # loss the guard has what it needs; if not, the redo starts
+            # from a real number instead of a bound. The cost is one
+            # extra root search that the redo was about to do anyway.
+            # (At pv_idx == 0, a == alpha, so this is the 1.1.2 test.)
+            score = -_negamax(piece, side, 3 - who, depth - 1, -beta, MATE * 2, 1, 1, 1)
         _unmake(piece, side)
         if g_timeout:
             # Keep whatever this iteration already proved; the caller decides
@@ -1901,6 +2060,28 @@ cdef void _sort_root():
         root_cap[j+1] = tc_; root_score[j+1] = ts
 
 
+cdef void _root_to_front(int i):
+    """Move root entry i to index 0, shifting 0..i-1 down by one. All six
+    per-index arrays move together (_sort_root moves only four)."""
+    cdef int f = root_from[i], t = root_to[i], c = root_cap[i]
+    cdef int s = root_score[i], it = root_iter[i], bd = root_bound[i]
+    cdef int j
+    for j in range(i, 0, -1):
+        root_from[j] = root_from[j-1]; root_to[j] = root_to[j-1]; root_cap[j] = root_cap[j-1]
+        root_score[j] = root_score[j-1]; root_iter[j] = root_iter[j-1]; root_bound[j] = root_bound[j-1]
+    root_from[0] = f; root_to[0] = t; root_cap[0] = c
+    root_score[0] = s; root_iter[0] = it; root_bound[0] = bd
+
+
+cdef int _root_index_of(int f, int t):
+    """Index of root move (f, t), or 0 if it is not in the list."""
+    cdef int i
+    for i in range(n_root):
+        if root_from[i] == f and root_to[i] == t:
+            return i
+    return 0
+
+
 # ------------------------------------------------------------------- API
 def core_reset(int max_depth, int ext_budget, int use_tt=1, int use_lmr=1,
                int use_ext=1, int use_nmp=1, int use_pvs=1, int use_fut=1,
@@ -1908,7 +2089,8 @@ def core_reset(int max_depth, int ext_budget, int use_tt=1, int use_lmr=1,
                long long node_limit=0, int eval_version=2,
                int use_hist_lmr=1, int use_hist_malus=0,
                int use_root_guard=0, int use_mate_threat=0, int use_chk_prune=0,
-               int use_lmr_cap=0, int soltab=0, int mob=0, int qguard=0):
+               int use_lmr_cap=0, int soltab=0, int mob=0, int qguard=0,
+               int lockscale=0, int nullchk=0, int tteval=0, int rootfh=0, int ksafe=0):
     """Reset TT / killers / history / stats for a fresh Engine.search()."""
     global g_nodes, g_qnodes, g_tthits, g_timeout, g_ext, g_maxdepth
     global g_use_tt, g_use_lmr, g_use_ext, g_use_nmp, g_use_pvs
@@ -1916,6 +2098,8 @@ def core_reset(int max_depth, int ext_budget, int use_tt=1, int use_lmr=1,
     global g_eval_ver, g_use_hist_lmr, g_hist_max, g_use_hist_malus
     global g_use_root_guard, g_use_mate_threat, g_use_chk_prune, g_use_lmr_cap, g_soltab, g_mob
     global g_use_qguard
+    global g_lockscale, g_lockk, g_use_nullchk, g_nullchk_kept, g_use_tteval, g_tteval_used
+    global g_use_rootfh, g_rootfh_rot, g_rootfh_kept, g_ksafe
     cdef int i
     for i in range(TT_SIZE):
         tt_flag[i] = -1
@@ -1945,6 +2129,12 @@ def core_reset(int max_depth, int ext_budget, int use_tt=1, int use_lmr=1,
     g_soltab = soltab
     g_mob = mob
     g_use_qguard = qguard
+    # The 1.2 campaign flags; all off is the 1.1.2 search, node for node.
+    g_lockscale = lockscale; g_lockk = 1
+    g_use_nullchk = nullchk; g_nullchk_kept = 0
+    g_use_tteval = tteval; g_tteval_used = 0
+    g_use_rootfh = rootfh; g_rootfh_rot = 0; g_rootfh_kept = 0
+    g_ksafe = ksafe
     for i in range(204):
         root_iter[i] = 0
         root_bound[i] = 0
@@ -1967,9 +2157,11 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
     and a real principal variation possible.
     """
     global g_deadline, h_top, g_base_ply, n_root, n_game_hash, g_timeout, g_ext, g_search_start
+    global g_rootfh_rot, g_rootfh_kept
     g_deadline = deadline
     g_search_start = _pytime.time()
     g_base_ply = base_ply
+    _set_lockk()
     g_timeout = 0
     global g_node_reserve, g_time_reserve, g_guard_verify, g_guard_fired, g_node_limit
     g_node_reserve = 0; g_time_reserve = 0.0
@@ -2044,9 +2236,16 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
     cdef int final_from = root_from[0], final_to = root_to[0]
     cdef int final_cap = root_cap[0], final_score = 0, depth_done = 0
     cdef int ext_budget = g_ext
+    cdef int fh_depth = 0, fh_from = 0, fh_to = 0, fh_cap = 0, fh_score = 0
+    # Where the move about to be played (final_from, final_to) sits in the root
+    # arrays. A completed depth sorts it to index 0; only a rootfh rotation
+    # moves it down, so with the flag off this is always 0. The rootguard
+    # tests below read this index, not index 0.
+    cdef int pv_g = 0
 
     for depth in range(1, max_depth + 1):
         g_ext = ext_budget
+        pv_g = 0
         if g_use_asp and depth >= 4 and depth_done > 0 and final_score < MATE_BOUND \
                 and final_score > -MATE_BOUND:
             window = 40
@@ -2061,11 +2260,12 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
                 alpha = -MATE * 2
                 beta = MATE * 2
             score = _root_iteration(&piece[0], &side[0], who, depth,
-                                    alpha, beta, &best_idx)
+                                    alpha, beta, &best_idx, pv_g)
             if g_timeout:
                 if (g_use_root_guard == 4 and not extended and depth_done > 0
-                        and n_root > 1 and root_iter[0] == depth
-                        and root_bound[0] == 1 and root_score[0] > -MATE_BOUND):
+                        and n_root > 1 and root_iter[pv_g] == depth
+                        and root_bound[pv_g] == 1 and root_score[pv_g] > -MATE_BOUND
+                        and (best_idx >= 0 or fh_depth != depth)):
                     # Fail-low extension. The move the engine was about to
                     # play has just failed low at this depth and the clock
                     # ran out before the wider window could say what that
@@ -2087,7 +2287,14 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
                     # by paying on every move for a re-search or a reserve;
                     # this pays only here. In the lost game, deployed finds
                     # the holding move at 1.5x the UI's budget.
+                    # rootfh: no extension while this depth's fail-high is
+                    # still unverified -- the clock ran out inside it (index
+                    # 0) and the acceptance rule below keeps it. When the
+                    # extension is granted, any fail-high of this depth has
+                    # been re-searched without failing high again, so it must
+                    # not be kept if the rerun dies inside index 0.
                     extended = 1
+                    fh_depth = 0
                     g_guard_verify += 1
                     if g_node_limit > 0:
                         g_node_limit += g_node_limit
@@ -2097,6 +2304,20 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
                     continue
                 break
             if window > 0 and (score <= alpha or score >= beta):
+                if g_use_rootfh and score >= beta and best_idx >= 0:
+                    # Root fail-high: the widened redo searches this move first
+                    fh_depth = depth; fh_score = score
+                    fh_from = root_from[best_idx]; fh_to = root_to[best_idx]
+                    fh_cap = root_cap[best_idx]
+                    if best_idx > 0:
+                        _root_to_front(best_idx)
+                        g_rootfh_rot += 1
+                        pv_g = _root_index_of(final_from, final_to)
+                elif g_use_rootfh:
+                    # A completed fail-low pass re-searched every root move, the
+                    # earlier fail-high move (index 0) included, and none reached
+                    # alpha: that fail-high is refuted and must not be kept.
+                    fh_depth = 0
                 # Aspiration failed: widen and redo this depth.
                 window *= 4
                 if window > 1200:
@@ -2105,14 +2326,16 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
             break
 
         if g_timeout and g_use_root_guard == 3 and depth_done > 0 and n_root > 1 \
-                and root_iter[0] == depth and root_bound[0] == 1 \
-                and root_score[0] > -MATE_BOUND:
+                and root_iter[pv_g] == depth and root_bound[pv_g] == 1 \
+                and root_score[pv_g] > -MATE_BOUND \
+                and (best_idx >= 0 or fh_depth != depth):
             # mode 3: the PV move failed low this depth and the clock ran out
             # before the redo. Spend the reserve on one exact search of it so
-            # the guard below has a score instead of a bound.
+            # the guard below has a score instead of a bound. (Not while
+            # rootfh is about to keep an unverified fail-high instead.)
             g_node_reserve = 0; g_time_reserve = 0.0; g_timeout = 0
-            fr = root_from[0] // COLS; fc = root_from[0] % COLS
-            tr = root_to[0] // COLS;   tc = root_to[0] % COLS
+            fr = root_from[pv_g] // COLS; fc = root_from[pv_g] % COLS
+            tr = root_to[pv_g] // COLS;   tc = root_to[pv_g] % COLS
             _make(&piece[0], &side[0], fr, fc, tr, tc)
             vscore = -_negamax(&piece[0], &side[0], 3 - who, depth - 1,
                                -MATE * 2, MATE * 2, 1, 1, 1)
@@ -2121,7 +2344,7 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
             # acceptance test below; the verification must not clobber it
             # (a timeout inside it returns 0, which then read as a score).
             if not g_timeout:
-                root_score[0] = vscore; root_bound[0] = 0
+                root_score[pv_g] = vscore; root_bound[pv_g] = 0
             g_timeout = 1
         if g_timeout:
             # Accept a partially searched deeper iteration only when it found
@@ -2131,10 +2354,18 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
                 final_to = root_to[best_idx]
                 final_cap = root_cap[best_idx]
                 final_score = score
+            elif (g_use_rootfh and best_idx < 0 and fh_depth == depth
+                    and depth_done > 0 and fh_score > final_score):
+                # The redo died inside its first move, the fail-high move, before
+                # re-verifying it; its lower bound already beats the last completed depth.
+                final_from = fh_from; final_to = fh_to; final_cap = fh_cap
+                final_score = fh_score
+                g_rootfh_kept += 1
             elif (g_use_root_guard and depth_done > 0 and n_root > 1
-                    and root_iter[0] == depth and root_score[0] < -MATE_BOUND):
+                    and root_iter[pv_g] == depth and root_score[pv_g] < -MATE_BOUND):
                 # rootguard. The move we were about to play (index 0 after the
-                # last sort) was re-searched in this unfinished iteration and
+                # last sort; pv_g once rootfh has rotated a fail-high in front
+                # of it) was re-searched in this unfinished iteration and
                 # proven to lose by force. That is a proof, not a bound, and
                 # the old rule above threw it away because no *better* move
                 # had been found yet. Play the best move that is not a proven
@@ -2147,8 +2378,8 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
                 # bound than a holding move. Best non-proven-loss bound it is.
                 guard_idx = -1
                 guard_best = -MATE * 2
-                for gi in range(1, n_root):
-                    if root_score[gi] > -MATE_BOUND and root_score[gi] > guard_best:
+                for gi in range(n_root):
+                    if gi != pv_g and root_score[gi] > -MATE_BOUND and root_score[gi] > guard_best:
                         guard_best = root_score[gi]; guard_idx = gi
                 if guard_idx >= 0:
                     final_from = root_from[guard_idx]
@@ -2219,6 +2450,7 @@ def core_negamax(int[::1] piece, int[::1] side, int who, int depth,
     global g_deadline, h_top, g_base_ply, n_game_hash
     g_deadline = deadline
     g_base_ply = base_ply
+    _set_lockk()
     h_top = 0
     n_game_hash = 0
     _full_hash(&piece[0], &side[0], who)
@@ -2237,6 +2469,12 @@ def core_guard_stats():
     """(fail-low extensions or verifications run, moves the proven-loss
     rule changed) in the last search."""
     return (g_guard_verify, g_guard_fired)
+
+def core_campaign_stats():
+    """Campaign-flag counters for the last search: (rootfh rotations,
+    rootfh fail-highs kept on timeout, nullchk checking moves kept from
+    pruning, tteval static evals replaced by a TT value)."""
+    return (g_rootfh_rot, g_rootfh_kept, g_nullchk_kept, g_tteval_used)
 
 def core_root_dump():
     """Root moves as the last search left them: (from, to, score, depth the
@@ -2279,14 +2517,17 @@ def core_see(int[::1] piece, int[::1] side, int fr, int fc, int tr, int tc):
 
 
 def core_eval(int[::1] piece, int[::1] side, int base_ply, int version=1,
-              int soltab=0, int mob=0):
+              int soltab=0, int mob=0, int lockscale=0, int ksafe=0):
     """evaluate(board, include_mobility=False). version=1 is the original."""
-    # The evaluator reads g_soltab / g_mob, which core_reset sets for a search.
-    # A direct evaluate() call must not inherit whatever the last search left
-    # there, so the knobs are explicit here and restored afterwards.
-    global g_soltab, g_mob
+    # The evaluator reads g_soltab / g_mob / g_lockscale / g_ksafe, which
+    # core_reset sets for a search. A direct evaluate() call must not inherit
+    # whatever the last search left there, so the knobs are explicit here and
+    # restored afterwards.
+    global g_soltab, g_mob, g_lockscale, g_ksafe
     cdef int keep_soltab = g_soltab, keep_mob = g_mob
+    cdef int keep_lockscale = g_lockscale, keep_ksafe = g_ksafe
     g_soltab = soltab; g_mob = mob
+    g_lockscale = lockscale; g_ksafe = ksafe
     try:
         global g_base_ply, h_top
         g_base_ply = base_ply
@@ -2296,6 +2537,7 @@ def core_eval(int[::1] piece, int[::1] side, int base_ply, int version=1,
         return _evaluate(&piece[0], &side[0])
     finally:
         g_soltab = keep_soltab; g_mob = keep_mob
+        g_lockscale = keep_lockscale; g_ksafe = keep_ksafe
 
 
 

@@ -162,6 +162,15 @@ class SearchOptions:
     qsearch_guard: int = 6
     soldier_table: int = 0          # 0 = linear advancement bonus, 1 = per-row table
     mobility_weight: int = 2        # centipawns per covered square; 0 = off (2 since 1.2.0)
+    # The 1.2 campaign flags, node-identical when off. Four are on since
+    # 1.3.0 (stacked: 56.7% at 60k and the 300k row in CHANGELOG, with 3%
+    # fewer nodes for ksafe's speed cost); rootfh stays off -- it fails the
+    # 2026-08-17 hold on the 1.2.0 base.
+    lock_scale: int = 1             # 0 off; 1 qsearch delta margin in lock units; 2 eval / lock factor after ply 80
+    null_check_guard: int = 2       # 0 off; 1 the node answering a null move never prunes quiet checks; 2 also that side's next node
+    tt_eval: int = 1                # 0 off; 1 a stored TT bound replaces static_eval for RFP / NMP gate / futility, + futility floor
+    root_fail_high: bool = False    # a root fail-high goes first in the redo and is kept if the redo times out inside it
+    king_safety: int = 1            # 0 off; 1 palace safety units in king danger; 2 = 1 without the v1 exposure term
 
     _ALIASES = {
         "tt": "use_tt", "lmr": "use_lmr", "ext": "use_ext", "nmp": "use_nmp",
@@ -174,7 +183,13 @@ class SearchOptions:
         "histmalus": "use_hist_malus",
         "rootguard": "root_guard_mode", "mthreat": "mate_threat_mode", "chkprune": "use_chk_prune", "qguard": "qsearch_guard",
         "lmrcap": "use_lmr_cap", "soltab": "soldier_table", "mob": "mobility_weight",
+        "lockscale": "lock_scale", "nullchk": "null_check_guard", "tteval": "tt_eval",
+        "rootfh": "root_fail_high", "ksafe": "king_safety",
     }
+    # Integer modes and their valid range. The core treats an unknown mode as
+    # off, so a typo in an A/B spec would silently measure the unguarded engine.
+    _RANGES = {"qsearch_guard": (0, 6), "lock_scale": (0, 2), "null_check_guard": (0, 2),
+               "tt_eval": (0, 1), "king_safety": (0, 2)}
 
     @classmethod
     def parse(cls, spec: str) -> "SearchOptions":
@@ -191,12 +206,13 @@ class SearchOptions:
             field_name = cls._ALIASES.get(key, key)
             if field_name not in cls.__dataclass_fields__:
                 raise ValueError(f"unknown search option {key!r}")
-            if field_name in ("ext_budget", "node_limit", "eval_version", "soldier_table", "mobility_weight", "mate_threat_mode", "root_guard_mode", "qsearch_guard"):
+            if field_name in ("ext_budget", "node_limit", "eval_version", "soldier_table", "mobility_weight", "mate_threat_mode", "root_guard_mode", "qsearch_guard",
+                              "lock_scale", "null_check_guard", "tt_eval", "king_safety"):
                 values[field_name] = int(raw)
-                # The core treats an unknown mode as off, so a typo in an A/B
-                # spec would silently measure the unguarded engine.
-                if field_name == "qsearch_guard" and not 0 <= values[field_name] <= 6:
-                    raise ValueError(f"qguard must be 0..6, got {raw!r}")
+                if field_name in cls._RANGES:
+                    lo, hi = cls._RANGES[field_name]
+                    if not lo <= values[field_name] <= hi:
+                        raise ValueError(f"{key} must be {lo}..{hi}, got {raw!r}")
             else:
                 values[field_name] = raw.strip() not in ("0", "false", "False", "no")
         return cls(**values)
@@ -333,6 +349,11 @@ class Engine:
             opts.soldier_table,
             opts.mobility_weight,
             opts.qsearch_guard,
+            lockscale=opts.lock_scale,
+            nullchk=opts.null_check_guard,
+            tteval=opts.tt_eval,
+            rootfh=1 if opts.root_fail_high else 0,
+            ksafe=opts.king_safety,
         )
         deadline = (time.time() + self.time_limit) if self.time_limit else 0.0
         frm, to, cap, score, depth, pv = core_search(

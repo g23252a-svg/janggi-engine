@@ -3,6 +3,53 @@
 Versions before 0.4.0 predate this file; `setup.py` sat at 0.3.0 through all
 three of the patches below, which is what 1.0.0's versioning work is about.
 
+## 1.3.0 — four fixes from a design panel over the lost games
+
+A panel of independent designers read the four lost games (2026-10-08 to
+2026-10-11) and the engine, proposed changes, had them critiqued, and
+ranked five. Each was implemented behind a flag that is node-identical when
+off (the 1.0.0 pin still costs 2,822,961 nodes), reviewed adversarially, and
+measured against 1.2.0. Four ship together:
+
+- `lockscale=1`: from ply 80 the evaluation counts material twice (three
+  times from ply 120) as an endgame lock, but quiescence's delta pruning
+  still credited a capture at face value, so recaptures were pruned at any
+  null-window node: 55% of quiescence bounds were wrong on real positions
+  from the lost games, 2.4% without the lock. The margin is now in lock
+  units (4.2%). Nothing changes before ply 80.
+- `tteval=1`: reverse futility, the null-move gate and futility read the
+  static evaluation even when the transposition table already held a truer
+  bound for the node; now a usable stored bound replaces it, with a
+  fail-soft floor for futility (the Stockfish form).
+- `nullchk=2`: in the search that answers a null move, late-move pruning
+  dropped quiet checks -- in the 2026-10-11 game a horse check that mates
+  in one, so passing looked safe. Quiet checks are now kept at that node
+  and at the same side's next one.
+- `ksafe=1`: palace safety units inside the squared king-danger term:
+  flight squares under fire, a fully covered general, and missing guards
+  weighted by the enemy force bearing on the palace. In the 2026-10-09 game
+  HAN had no guards against two chariots, two cannons and two horses, and
+  the old term stayed at 16-53 cp. Costs about 2.5% speed.
+
+| against 1.2.0 | result |
+| --- | --- |
+| `lockscale=1`, 60k | +31 =0 -29, 51.7% (10 of 30 pairs identical: inert before ply 80) |
+| `tteval=1`, 60k / 300k | +34 =0 -26, 56.7% / +31 =0 -29, 51.7% |
+| `nullchk=2`, 60k | +34 =0 -26, 56.7% (pairs CI 48.9..64.4) |
+| `ksafe=1` with 2.5% fewer nodes, 60k | +34 =0 -26, 56.7% |
+| **all four, with 3% fewer nodes, 60k** | **+34 =0 -26, 56.7%, +47 elo (pairs CI 47.6..65.7)** |
+| **all four, with 3% fewer nodes, 300k** | **+31 =0 -29, 51.7%, +12 elo (pairs CI 37.2..66.1): not worse, not a measured gain** |
+
+The stack wins far more games by mate (23-7 at 60k) and loses more on
+points at the 200-ply cap (8-16): it attacks the king more and coasts less.
+All lost-game positions pass with the stack, and the 2026-08-17 mate proof
+takes 83,672 nodes instead of 226,746.
+
+Not shipped: `rootfh` (a root fail-high goes first in the redo; it changes
+the move in 12-15% of searches and plays the fatal move in the 2026-08-17
+position on the 1.2.0 base), `nullchk=1` and `ksafe=2` (same failure).
+They stay behind their flags.
+
 ## 1.2.0 — two near-misses that are a large gain together
 
 A user played CHO on 2026-10-11, followed the server engine for 38 of 55
