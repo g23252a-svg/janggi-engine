@@ -1,0 +1,1 @@
+{"seed": 20260832, "a_is_cho": true, "winner": "cho", "plies": 147, "reason": "mate", "a": "histmalus=1,mob=2", "b": "", "budget": {"nodes": 300000, "time": null, "depth": 64}, "spent": {"a": {"nodes": 20341834, "moves": 71, "guard": 0}, "b": {"nodes": 22282835, "moves": 70, "guard": 0}}}
