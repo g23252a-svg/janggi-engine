@@ -1997,8 +1997,10 @@ cdef int _negamax(int* piece, int* side, int who, int depth, int alpha, int beta
 
 # ------------------------------------------------------------------- root
 cdef int _root_iteration(int* piece, int* side, int who, int depth,
-                         int alpha, int beta, int* best_idx):
-    """Search every root move at `depth`; fill root_score and return the best."""
+                         int alpha, int beta, int* best_idx, int pv_idx):
+    """Search every root move at `depth`; fill root_score and return the best.
+    pv_idx is where the move about to be played sits: 0, unless rootfh has
+    rotated a fail-high in front of it."""
     cdef int i, fr, fc, tr, tc, score, best = -MATE * 2
     cdef int a = alpha
     best_idx[0] = -1
@@ -2008,23 +2010,24 @@ cdef int _root_iteration(int* piece, int* side, int who, int depth,
         _make(piece, side, fr, fc, tr, tc)
         if i == 0 or not g_use_pvs:
             score = -_negamax(piece, side, 3 - who, depth - 1, -beta, -a, 1, 1, 1)
-            if (i == 0 and score <= a and a > -MATE * 2 and not g_timeout
-                    and (g_use_root_guard == 1
-                         or (g_use_root_guard == 2 and _late_in_budget()))):
-                # rootguard, under an aspiration window. The PV move just
-                # failed low, and a fail-low is a BOUND: it says "worse than
-                # alpha", never "lost by force", so the guard could not act on
-                # it and the whole depth would be redone with a wider window
-                # that the clock may not allow. Re-search this one move with
-                # the floor removed so the score is exact. If it is a proven
-                # loss the guard has what it needs; if not, the redo starts
-                # from a real number instead of a bound. The cost is one
-                # extra root search that the redo was about to do anyway.
-                score = -_negamax(piece, side, 3 - who, depth - 1, -beta, MATE * 2, 1, 1, 1)
         else:
             score = -_negamax(piece, side, 3 - who, depth - 1, -a - 1, -a, 1, 0, 1)
             if score > a and score < beta and not g_timeout:
                 score = -_negamax(piece, side, 3 - who, depth - 1, -beta, -a, 1, 1, 1)
+        if (i == pv_idx and score <= alpha and alpha > -MATE * 2 and not g_timeout
+                and (g_use_root_guard == 1
+                     or (g_use_root_guard == 2 and _late_in_budget()))):
+            # rootguard, under an aspiration window. The PV move just
+            # failed low, and a fail-low is a BOUND: it says "worse than
+            # alpha", never "lost by force", so the guard could not act on
+            # it and the whole depth would be redone with a wider window
+            # that the clock may not allow. Re-search this one move with
+            # the floor removed so the score is exact. If it is a proven
+            # loss the guard has what it needs; if not, the redo starts
+            # from a real number instead of a bound. The cost is one
+            # extra root search that the redo was about to do anyway.
+            # (At pv_idx == 0, a == alpha, so this is the 1.1.2 test.)
+            score = -_negamax(piece, side, 3 - who, depth - 1, -beta, MATE * 2, 1, 1, 1)
         _unmake(piece, side)
         if g_timeout:
             # Keep whatever this iteration already proved; the caller decides
@@ -2068,6 +2071,15 @@ cdef void _root_to_front(int i):
         root_score[j] = root_score[j-1]; root_iter[j] = root_iter[j-1]; root_bound[j] = root_bound[j-1]
     root_from[0] = f; root_to[0] = t; root_cap[0] = c
     root_score[0] = s; root_iter[0] = it; root_bound[0] = bd
+
+
+cdef int _root_index_of(int f, int t):
+    """Index of root move (f, t), or 0 if it is not in the list."""
+    cdef int i
+    for i in range(n_root):
+        if root_from[i] == f and root_to[i] == t:
+            return i
+    return 0
 
 
 # ------------------------------------------------------------------- API
@@ -2225,9 +2237,15 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
     cdef int final_cap = root_cap[0], final_score = 0, depth_done = 0
     cdef int ext_budget = g_ext
     cdef int fh_depth = 0, fh_from = 0, fh_to = 0, fh_cap = 0, fh_score = 0
+    # Where the move about to be played (final_from, final_to) sits in the root
+    # arrays. A completed depth sorts it to index 0; only a rootfh rotation
+    # moves it down, so with the flag off this is always 0. The rootguard
+    # tests below read this index, not index 0.
+    cdef int pv_g = 0
 
     for depth in range(1, max_depth + 1):
         g_ext = ext_budget
+        pv_g = 0
         if g_use_asp and depth >= 4 and depth_done > 0 and final_score < MATE_BOUND \
                 and final_score > -MATE_BOUND:
             window = 40
@@ -2242,13 +2260,12 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
                 alpha = -MATE * 2
                 beta = MATE * 2
             score = _root_iteration(&piece[0], &side[0], who, depth,
-                                    alpha, beta, &best_idx)
+                                    alpha, beta, &best_idx, pv_g)
             if g_timeout:
                 if (g_use_root_guard == 4 and not extended and depth_done > 0
-                        and n_root > 1 and root_iter[0] == depth
-                        and root_bound[0] == 1 and root_score[0] > -MATE_BOUND
-                        and (not g_use_rootfh or (root_from[0] == final_from
-                                                  and root_to[0] == final_to))):
+                        and n_root > 1 and root_iter[pv_g] == depth
+                        and root_bound[pv_g] == 1 and root_score[pv_g] > -MATE_BOUND
+                        and (best_idx >= 0 or fh_depth != depth)):
                     # Fail-low extension. The move the engine was about to
                     # play has just failed low at this depth and the clock
                     # ran out before the wider window could say what that
@@ -2270,7 +2287,14 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
                     # by paying on every move for a re-search or a reserve;
                     # this pays only here. In the lost game, deployed finds
                     # the holding move at 1.5x the UI's budget.
+                    # rootfh: no extension while this depth's fail-high is
+                    # still unverified -- the clock ran out inside it (index
+                    # 0) and the acceptance rule below keeps it. When the
+                    # extension is granted, any fail-high of this depth has
+                    # been re-searched without failing high again, so it must
+                    # not be kept if the rerun dies inside index 0.
                     extended = 1
+                    fh_depth = 0
                     g_guard_verify += 1
                     if g_node_limit > 0:
                         g_node_limit += g_node_limit
@@ -2288,6 +2312,7 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
                     if best_idx > 0:
                         _root_to_front(best_idx)
                         g_rootfh_rot += 1
+                        pv_g = _root_index_of(final_from, final_to)
                 elif g_use_rootfh:
                     # A completed fail-low pass re-searched every root move, the
                     # earlier fail-high move (index 0) included, and none reached
@@ -2301,16 +2326,16 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
             break
 
         if g_timeout and g_use_root_guard == 3 and depth_done > 0 and n_root > 1 \
-                and root_iter[0] == depth and root_bound[0] == 1 \
-                and root_score[0] > -MATE_BOUND \
-                and (not g_use_rootfh or (root_from[0] == final_from
-                                          and root_to[0] == final_to)):
+                and root_iter[pv_g] == depth and root_bound[pv_g] == 1 \
+                and root_score[pv_g] > -MATE_BOUND \
+                and (best_idx >= 0 or fh_depth != depth):
             # mode 3: the PV move failed low this depth and the clock ran out
             # before the redo. Spend the reserve on one exact search of it so
-            # the guard below has a score instead of a bound.
+            # the guard below has a score instead of a bound. (Not while
+            # rootfh is about to keep an unverified fail-high instead.)
             g_node_reserve = 0; g_time_reserve = 0.0; g_timeout = 0
-            fr = root_from[0] // COLS; fc = root_from[0] % COLS
-            tr = root_to[0] // COLS;   tc = root_to[0] % COLS
+            fr = root_from[pv_g] // COLS; fc = root_from[pv_g] % COLS
+            tr = root_to[pv_g] // COLS;   tc = root_to[pv_g] % COLS
             _make(&piece[0], &side[0], fr, fc, tr, tc)
             vscore = -_negamax(&piece[0], &side[0], 3 - who, depth - 1,
                                -MATE * 2, MATE * 2, 1, 1, 1)
@@ -2319,7 +2344,7 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
             # acceptance test below; the verification must not clobber it
             # (a timeout inside it returns 0, which then read as a score).
             if not g_timeout:
-                root_score[0] = vscore; root_bound[0] = 0
+                root_score[pv_g] = vscore; root_bound[pv_g] = 0
             g_timeout = 1
         if g_timeout:
             # Accept a partially searched deeper iteration only when it found
@@ -2337,11 +2362,10 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
                 final_score = fh_score
                 g_rootfh_kept += 1
             elif (g_use_root_guard and depth_done > 0 and n_root > 1
-                    and root_iter[0] == depth and root_score[0] < -MATE_BOUND
-                    and (not g_use_rootfh or (root_from[0] == final_from
-                                              and root_to[0] == final_to))):
+                    and root_iter[pv_g] == depth and root_score[pv_g] < -MATE_BOUND):
                 # rootguard. The move we were about to play (index 0 after the
-                # last sort) was re-searched in this unfinished iteration and
+                # last sort; pv_g once rootfh has rotated a fail-high in front
+                # of it) was re-searched in this unfinished iteration and
                 # proven to lose by force. That is a proof, not a bound, and
                 # the old rule above threw it away because no *better* move
                 # had been found yet. Play the best move that is not a proven
@@ -2354,8 +2378,8 @@ def core_search(int[::1] piece, int[::1] side, int who, int max_depth,
                 # bound than a holding move. Best non-proven-loss bound it is.
                 guard_idx = -1
                 guard_best = -MATE * 2
-                for gi in range(1, n_root):
-                    if root_score[gi] > -MATE_BOUND and root_score[gi] > guard_best:
+                for gi in range(n_root):
+                    if gi != pv_g and root_score[gi] > -MATE_BOUND and root_score[gi] > guard_best:
                         guard_best = root_score[gi]; guard_idx = gi
                 if guard_idx >= 0:
                     final_from = root_from[guard_idx]
