@@ -124,7 +124,7 @@ class SearchOptions:
     node_limit: int = 0             # 0 = unlimited; used for reproducible A/B
     eval_version: int = 2           # 1 = original evaluator, 2 = Janggi-aware
     use_hist_lmr: bool = True       # scale the late-move reduction by move history
-    use_hist_malus: bool = False    # bounded signed history: gravity + malus for failed quiets
+    use_hist_malus: bool = True     # bounded signed history: gravity + malus for failed quiets (1.2.0)
     # rootguard: never play a root move the current depth has proven lost.
     # 0 off; 1 exact re-search of the PV move on every fail-low; 2 the same
     # only past 70% of the budget; 3 hold back 8% of the budget and verify
@@ -161,7 +161,7 @@ class SearchOptions:
     #     static eval, plus the cap: acts only where quiescence cycles
     qsearch_guard: int = 6
     soldier_table: int = 0          # 0 = linear advancement bonus, 1 = per-row table
-    mobility_weight: int = 0        # centipawns per covered square; 0 = off
+    mobility_weight: int = 2        # centipawns per covered square; 0 = off (2 since 1.2.0)
 
     _ALIASES = {
         "tt": "use_tt", "lmr": "use_lmr", "ext": "use_ext", "nmp": "use_nmp",

@@ -3,6 +3,45 @@
 Versions before 0.4.0 predate this file; `setup.py` sat at 0.3.0 through all
 three of the patches below, which is what 1.0.0's versioning work is about.
 
+## 1.2.0 — two near-misses that are a large gain together
+
+A user played CHO on 2026-10-11, followed the server engine for 38 of 55
+moves, and lost on material, 9 points to 20.5. There was no single blunder.
+The engine's own score was too optimistic one move before reality again and
+again (ply 45: -169 against a real -518; ply 59: -1020 against -2110), and at
+ply 57 its 1M-node recommendation walked into a forced mate that an 8M search
+sees. More time did not change its choices: 1M, 3M and 8M nodes picked the
+same moves at plies 45, 59 and 61. That is a strength problem, not a bug.
+
+Two changes from the 1.1.0 campaign had each measured positive and been left
+off for want of significance: bounded signed history (`histmalus=1`, 55.8%
+of 120) and mobility in the compiled evaluator (`mob=2`, 60.0% of 60, but
+11.5% slower per node). Measured together against the deployed 1.1.2:
+
+| budget | result |
+| --- | --- |
+| 60k nodes | **+42 =0 -18, 70.0%, +147 elo (pairs CI 57.9..82.1)**; every shard 14-6 |
+| 300k nodes | **+43 =0 -17, 71.7%, +161 elo (pairs CI 59.5..83.8)** |
+| 60k, the candidate given 10% fewer nodes | +35 =0 -25, 58.3%, +58 elo (pairs CI 47.7..68.9) |
+| 300k, the candidate given 10% fewer nodes | **+43 =0 -17, 71.7%, +161 elo (pairs CI 61.5..81.8)** with 11.4% fewer nodes per move (283,556 vs 319,943) |
+
+The together-cost is 9.9% nodes per second (mobility 8%, history 2%),
+measured interleaved on the same positions; the speed-compensated rows give
+the candidate 10% fewer nodes so a node-limited match sees what a clock would.
+The web UI and the server are time-limited, so those rows are the ones that
+describe real use.
+
+All the lost-game positions still pass: 2026-08-17 holds at 1M; its mate
+proof is found in 226,746 nodes; the 2026-10-10 mate in four is found at
+depth 10 in 107k nodes instead of 708k. In the 2026-10-11 game it avoids the
+mated recommendation at ply 57 and prefers a slightly better move at ply 45.
+The depth-12 opening pin is unchanged because the 1.0.0 form spells out
+`histmalus=0,mob=0`. Two mechanism tests now pin the 1.1.x evaluation they
+were written against.
+
+Five further candidates from a design panel over the four lost games are
+implemented behind flags and are being measured on top of this release.
+
 ## 1.1.2 — a cycle of checks inside quiescence
 
 A user played CHO on 2026-10-10, followed the server engine for 20 of 24
