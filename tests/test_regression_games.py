@@ -112,7 +112,7 @@ def test_the_fail_low_extension_fires_once_and_at_most_doubles_the_budget():
     cost nothing when the budget is a depth."""
     # The 1.1.0 mechanism, measured on the 1.1.x evaluation it was built on;
     # with 1.2.0's defaults the position is resolved without needing it.
-    opts = SearchOptions.parse("rootguard=4,histmalus=0,mob=0")
+    opts = SearchOptions.parse("rootguard=4,histmalus=0,mob=0,lockscale=0,nullchk=0,tteval=0,rootfh=0,ksafe=0")
     engine = Engine(max_depth=30, options=SearchOptions(**{**opts.__dict__, "node_limit": SHIPPING_BUDGET}))
     move, score = engine.search(build(LOST_GAME_PLY_54), HAN, game_ply=53)
     assert move.as_tuple() in HOLDS
@@ -128,7 +128,8 @@ def test_the_fail_low_extension_fires_once_and_at_most_doubles_the_budget():
 
 
 DEPLOYED_1_0_0 = ("asp=1,rootguard=0,extbudget=3,histmalus=0,mthreat=0,"
-                  "chkprune=0,lmrcap=0,soltab=0,mob=0,qguard=0")
+                  "chkprune=0,lmrcap=0,soltab=0,mob=0,qguard=0,"
+                  "lockscale=0,nullchk=0,tteval=0,rootfh=0,ksafe=0")
 DEPLOYED_1_0_0_DEPTH12_NODES = 2_822_961
 
 
@@ -158,15 +159,16 @@ def test_the_deployed_search_is_node_identical():
 # them hide this proof at some budgets and defaults, which is one more reason
 # they stay off. Re-enabling any of them means adding it here first.
 #
-# The 1.2 campaign flags (all off by default) are listed when they also keep
-# the 2026-08-17 hold and the 2026-10-10 mate in four at the UI's budget.
-# nullchk=1|2 and ksafe=1|2 hold this proof as well, but at one million nodes
-# they play the fatal (0,5,1,4) in the 2026-08-17 position, so they are not.
+# The 1.2 campaign flags are listed when they also keep the 2026-08-17 hold
+# and the 2026-10-10 mate in four at the UI's budget on the 1.2.0 base.
+# nullchk=1, ksafe=2 and rootfh=1 hold this proof as well, but at one
+# million nodes they play the fatal (0,5,1,4) in the 2026-08-17 position.
 SHIPPABLE = ["", DEPLOYED_1_0_0, "histmalus=1", "mthreat=2", "extbudget=4",
              "asp=0", "asp=1", "rootguard=0", "rootguard=1", "rootguard=4",
              "qguard=6",
              "rootguard=1,extbudget=4", "asp=0,rootguard=1",
-             "lockscale=1", "lockscale=2", "tteval=1", "rootfh=1"]
+             "lockscale=1", "lockscale=2", "tteval=1", "nullchk=2", "ksafe=1",
+             "lockscale=0,nullchk=0,tteval=0,rootfh=0,ksafe=0"]
 PROOF_SWEEP_BUDGET = 400_000
 
 
@@ -237,7 +239,8 @@ def test_the_quiescence_guard_reaches_the_core():
     the other. Off, the runaway is still there; on, it is not."""
     # 1.1.x evaluation pinned: with 1.2.0's defaults the mate is found at
     # depth 10, before the depth-12 runaway could happen at all.
-    base = dict(node_limit=SHIPPING_BUDGET, use_hist_malus=False, mobility_weight=0)
+    base = dict(node_limit=SHIPPING_BUDGET, use_hist_malus=False, mobility_weight=0,
+                lock_scale=0, null_check_guard=0, tt_eval=0, king_safety=0)
     off, _, _ = _search_2026_10_10(SearchOptions(**base, qsearch_guard=0))
     on, _, _ = _search_2026_10_10(SearchOptions(**base, qsearch_guard=6))
     assert off.qnodes * 2 > off.total_nodes and off.depth_reached == 11
@@ -252,9 +255,9 @@ def test_the_campaign_flags_parse_and_reject_unknown_modes():
     opts = SearchOptions.parse("lockscale=2,nullchk=1,tteval=1,rootfh=1,ksafe=2")
     assert (opts.lock_scale, opts.null_check_guard, opts.tt_eval,
             opts.root_fail_high, opts.king_safety) == (2, 1, 1, True, 2)
-    off = SearchOptions()
-    assert (off.lock_scale, off.null_check_guard, off.tt_eval,
-            off.root_fail_high, off.king_safety) == (0, 0, 0, False, 0)
+    shipped = SearchOptions()      # the 1.3.0 defaults
+    assert (shipped.lock_scale, shipped.null_check_guard, shipped.tt_eval,
+            shipped.root_fail_high, shipped.king_safety) == (1, 2, 1, False, 1)
     # The core treats an unknown mode as off: a typo must not silently
     # measure the unchanged engine.
     for bad in ("lockscale=3", "nullchk=3", "tteval=2", "ksafe=3", "ksafe=-1"):
@@ -269,13 +272,17 @@ def test_each_campaign_flag_reaches_the_core(spec):
     the search somewhere it can act, or every A/B of it would quietly measure
     the unchanged engine. The 2026-08-17 position, searched as if 100 plies
     into the game so the endgame lock (and lockscale with it) is live."""
-    def run(spec):
+    # Compared against every campaign flag off, so a flag that is now a
+    # default is still tested; two game plies, because lockscale only acts
+    # from ply 80 and nullchk does not change this position at ply 100.
+    off = "lockscale=0,nullchk=0,tteval=0,rootfh=0,ksafe=0"
+    def run(spec, ply):
         opts = SearchOptions.parse(spec)
         opts = SearchOptions(**{**opts.__dict__, "node_limit": 60_000, "root_guard_mode": 0})
         engine = Engine(max_depth=30, options=opts)
-        move, score = engine.search(build(LOST_GAME_PLY_54), HAN, game_ply=100)
+        move, score = engine.search(build(LOST_GAME_PLY_54), HAN, game_ply=ply)
         return move.as_tuple(), score, engine.stats.depth_reached, engine.stats.nodes
-    assert run(spec) != run("")
+    assert any(run(off + "," + spec, ply) != run(off, ply) for ply in (100, 53))
 
 
 @needs_core
