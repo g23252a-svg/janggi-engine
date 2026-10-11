@@ -110,7 +110,9 @@ def test_the_fail_low_extension_fires_once_and_at_most_doubles_the_budget():
     UI's budget that is what turns the fatal move into the move that holds;
     the extension must fire exactly once, never spend more than double, and
     cost nothing when the budget is a depth."""
-    opts = SearchOptions.parse("rootguard=4")
+    # The 1.1.0 mechanism, measured on the 1.1.x evaluation it was built on;
+    # with 1.2.0's defaults the position is resolved without needing it.
+    opts = SearchOptions.parse("rootguard=4,histmalus=0,mob=0")
     engine = Engine(max_depth=30, options=SearchOptions(**{**opts.__dict__, "node_limit": SHIPPING_BUDGET}))
     move, score = engine.search(build(LOST_GAME_PLY_54), HAN, game_ply=53)
     assert move.as_tuple() in HOLDS
@@ -227,8 +229,11 @@ def test_the_quiescence_guard_reaches_the_core():
     """qguard is the last positional argument to core_reset; if it stopped
     arriving, every other test here would still be green under one mode or
     the other. Off, the runaway is still there; on, it is not."""
-    off, _, _ = _search_2026_10_10(SearchOptions(node_limit=SHIPPING_BUDGET, qsearch_guard=0))
-    on, _, _ = _search_2026_10_10(SearchOptions(node_limit=SHIPPING_BUDGET, qsearch_guard=6))
+    # 1.1.x evaluation pinned: with 1.2.0's defaults the mate is found at
+    # depth 10, before the depth-12 runaway could happen at all.
+    base = dict(node_limit=SHIPPING_BUDGET, use_hist_malus=False, mobility_weight=0)
+    off, _, _ = _search_2026_10_10(SearchOptions(**base, qsearch_guard=0))
+    on, _, _ = _search_2026_10_10(SearchOptions(**base, qsearch_guard=6))
     assert off.qnodes * 2 > off.total_nodes and off.depth_reached == 11
     assert on.qnodes * 2 < on.total_nodes
 

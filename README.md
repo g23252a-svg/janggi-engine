@@ -185,8 +185,7 @@ What that measurement currently says, at an equal 60k nodes per move:
 | null-move pruning | 48.3% of 60, 57.5% of 40, 45.0% of 60 | never significant in 160 games — kept on only because removing it costs what `histlmr` wins |
 | quiescence guard (`qguard=6`, 1.1.2, ships) | 50.0% of 60 at 60k (every game identical) and 48.3% of 60 at 300k (27 of 30 pairs identical) | fixes a real lost game; see CHANGELOG |
 | `rootguard` (1.1.0, ships) | 51.7% of 60 at 60k and **60.0% of 60 at 300k**, using 10% and 9% more nodes per move (it thinks longer only when its move has just failed) | fixes a real lost game by proof; see CHANGELOG |
-| bounded signed history (`histmalus=1`) | 55.8% of 120 | not distinguishable at 120 — off |
-| mobility in the compiled evaluator (`mob=2`) | 60.0% of 60 | not distinguishable, and costs 11.5% nps a node match cannot see — off |
+| bounded signed history + compiled mobility together (`histmalus=1,mob=2`, 1.2.0, ships) | **70.0% of 60 at 60k, 71.7% of 60 at 300k** (both significant); with 10% fewer nodes to pay for their 9.9% speed cost, 58.3% at 60k and **+43 =0 -17, 71.7%, +161 elo (pairs CI 61.5..81.8)** with 11.4% fewer nodes per move (283,556 vs 319,943) at 300k | each alone measured 55.8% of 120 and 60.0% of 60 and was never shipped; together they are the largest measured gain in this repository |
 | soldier table (`soltab=1`) | 56.7% of 60 | not distinguishable — off |
 | reduce losing captures (`lmrcap=1`) | 43.5% of 23 | stopped: palace sacrifices are SEE-negative captures — off |
 | no aspiration + rootguard (`asp=0,rootguard=1`) | 60.0% at 60k, **43.3% at 300k** | the window is worth more the deeper the search — off |
