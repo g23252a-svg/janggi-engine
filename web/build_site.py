@@ -26,7 +26,7 @@ WEB = ROOT / "web"
 PACKAGE_MODULES = [
     "__init__.py", "_version.py", "board.py", "evaluate.py", "see.py",
     "search.py", "score.py", "repetition.py", "gibo.py", "book.py", "mcts.py",
-    "nn_encode.py",
+    "nn_encode.py", "winprob.py",
 ]
 
 INJECT = '<script src="browser-engine.js"></script>\n</head>'

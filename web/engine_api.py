@@ -18,6 +18,7 @@ from janggi.board import Board, Move, HAN, CHO, FORMATIONS, ROWS, COLS
 from janggi.repetition import RepetitionTracker
 from janggi.score import judge
 from janggi.search import Engine
+from janggi.winprob import MATE, win_probability, mate_in
 
 # Pure Python is roughly two orders of magnitude slower than the compiled core,
 # so cap the work: iterative deepening keeps the deepest COMPLETED depth, and
@@ -166,7 +167,12 @@ def api_analyze(data):
     if move is None and board.legal_moves(side):
         move, score = engine.search(board, side, game_ply=game_ply)
     if move is None:
-        return {"move": None, "score": score, "gameOver": True}
+        if not board.legal_moves(side):
+            # Lost: -MATE, as the compiled core and server.py report it (the
+            # pure-Python search alone would say 0).
+            score = -MATE
+        return {"move": None, "score": score, "gameOver": True,
+                **_win_fields(score, game_ply)}
 
     if score <= -800:
         danger = {"level": "critical", "text": "외통/큰 위기 — 궁 수비 최우선"}
@@ -187,7 +193,15 @@ def api_analyze(data):
         "pv": [{"fr": a, "fc": b, "tr": c, "tc": d} for a, b, c, d in engine.stats.pv],
         "gameOver": False,
         "engine": "browser",
+        **_win_fields(score, game_ply),
     }
+
+
+def _win_fields(score, game_ply):
+    """Exactly what server.py adds: the same module, the same rounding, so the
+    page shows the same probability for the same score on either build."""
+    return {"winProb": round(win_probability(score, game_ply), 4),
+            "mateIn": mate_in(score)}
 
 
 def api_score(data):

@@ -16,7 +16,12 @@
      markup works at / under Flask and at /<repo>/ under Pages. -->
 <link rel="icon" href="icon-192.png" type="image/png" />
 <style>
-  :root { --line:#6B4F2A; --bg:#E8C98A; }
+  /* Tokens the win-probability strip, the result box and the review share.
+     Side identity stays CHO blue / HAN red everywhere. */
+  :root { --line:#6B4F2A; --bg:#E8C98A;
+          --card:#f1efe8; --muted:#5f5a50;
+          --cho:#1565C0; --han:#C0392B; --cho-tint:#BBD3F0; --han-tint:#F3CFCA;
+          --up:#1E6B24; --down:#A83A0B; --rec:#2E7D32; }
   * { box-sizing: border-box; }
   html { -webkit-text-size-adjust: 100%; }
   body { font-family: system-ui, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
@@ -31,35 +36,157 @@
      reliably; the whole toolbar used to be 36px. touch-action removes the
      300ms tap delay and the double-tap-to-zoom that fires when you tap twice
      quickly on a button. */
-  button, select, input[type=checkbox], label { touch-action: manipulation; }
+  button, select, input[type=checkbox], label, summary { touch-action: manipulation; }
   h1 { font-size: 1.3rem; font-weight: 600; margin: 0 0 1rem; }
-  #ver { font-size: 0.75rem; font-weight: 400; color: #999; vertical-align: middle; }
-  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
+  /* During a game the heading is a label, not a banner: 30px more board. */
+  body.playing h1 { font-size: 1rem; margin: 0 0 8px; }
+  #ver { font-size: 0.75rem; font-weight: 400; color: var(--muted); vertical-align: middle; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px; }
   label { font-size: 13px; color:#555; }
+  /* A label wrapping a checkbox is the tap target, so it gets the 44px too. */
+  .row label { min-height:44px; display:inline-flex; align-items:center; gap:8px; }
+  input[type=checkbox] { width:22px; height:22px; margin:0; }
   select, button { font: inherit; padding: 10px 14px; border-radius: 10px;
                    border:1px solid #ccc; background:#fff; cursor:pointer;
-                   min-height: 44px; }
+                   min-height: 44px; color:#222; }
   button:active { background:#eee; }
   button.primary { border:2px solid #1565C0; }
   button.cho { border-color:#1565C0; color:#1565C0; }
   button.han { border-color:#C0392B; color:#C0392B; }
   button.warn { border-color:#999; color:#444; }
-  #status { font-size: 14px; color:#555; margin: 8px 0; min-height: 20px; }
+  /* Exactly one line, always: a status that wrapped moved the board 20px. */
+  #status { font-size: 13px; color:#555; height:20px; line-height:20px; margin: 0 0 6px;
+            white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   /* The canvas is sized in JS: the backing store is scaled by devicePixelRatio
      so the board is sharp on a phone screen, and the CSS size is chosen to fit
      the viewport height as well as its width, so the board and the engine's
      recommendation are on screen together without scrolling. */
   canvas { background: var(--bg); border-radius: 8px; touch-action:none;
            display:block; margin:0 auto; }
-  #result { margin-top: 12px; padding: 12px 14px; background:#f1efe8; border-radius:8px;
-            font-size: 14px; display:block; min-height: 132px; box-sizing: border-box; }
   .cap { color:#C0392B; }
-  .scorebar { display:flex; justify-content:space-between; align-items:center;
-              margin: 10px 0; padding: 10px 12px; background:#f1efe8; border-radius:8px; font-size:14px; }
-  .scorebar b.cho { color:#1565C0; }
-  .scorebar b.han { color:#C0392B; }
-  .moveinfo { font-size:13px; color:#666; }
-  #judge { margin-top:12px; padding:14px; border-radius:8px; font-size:15px; display:none;
+  .sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0);
+             white-space:nowrap; }
+
+  /* ---- 이길 확률 strip ------------------------------------------------------
+     Fixed 72px in every state; only text, classes and the fill width change,
+     so nothing below it ever moves. Full column width (not the board's: a
+     height-limited board would squeeze the caption off). Never colour alone:
+     a number or a word in every state, an arrow and a sign on every change, a
+     word on every tone. */
+  .wp { --mine:var(--cho); --opp-tint:var(--han-tint); --mine-ink:#0D47A1;
+        --wp-bg:var(--card); --ink:#1b1b1b; --sub:#555;
+        position:relative; height:72px; margin:0 0 6px;
+        padding:7px 12px 0; background:var(--wp-bg); color:var(--ink);
+        border:2px solid transparent; border-radius:10px; overflow:hidden;
+        container-type:inline-size; }
+  .wp.side-han { --mine:var(--han); --opp-tint:var(--cho-tint); --mine-ink:#A93226; }
+  .wp-row { display:flex; align-items:center; gap:10px; height:36px; }
+  .wp-big { flex:0 0 auto; min-width:2.2em; font-size:32px; font-weight:800; line-height:1;
+            letter-spacing:-0.5px; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .wp-big small { font-size:.55em; font-weight:700; margin-left:1px; }
+  .wp-big.words { font-size:24px; letter-spacing:-0.3px; }
+  /* A caption too long for its line is shrunk to fit (fitText, down to 10px)
+     before it is ellipsized, so the sizes inside are relative and the line
+     height is not: a shrunk line stays where it was. */
+  .wp-lab { flex:1 1 auto; min-width:0; font-size:12px; line-height:16.8px; color:var(--sub);
+            white-space:nowrap; }
+  .wp-lab > div { overflow:hidden; text-overflow:ellipsis; }
+  .wp-lab b { font-size:1.25em; color:var(--ink); }
+  .wp-d { font-weight:800; font-size:1.0833em; font-variant-numeric:tabular-nums; }
+  .wp-d.up { color:var(--up); } .wp-d.down { color:var(--down); } .wp-d.flat { color:#555; }
+  .wp-d.plunge { color:#fff; background:var(--down); border-radius:4px; padding:0 4px; }
+  .wp-pts { flex:0 0 auto; text-align:right; font-size:12px; line-height:1.4; color:var(--sub);
+            white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .wp-pts b { font-weight:700; }
+  .wp-pts b.cho { color:var(--cho); } .wp-pts b.han { color:var(--han); }
+  /* The container is the strip's content box: viewport - 52px in portrait.
+     Under 330 (360/375px phones, phone landscape) drop the "· 내(초) 이길
+     확률" tail and shrink the big number; the points stay. */
+  @container (max-width: 330px) {
+    .wp .who { display:none; } .wp-row { gap:8px; }
+    .wp-big { font-size:28px; min-width:2em; } .wp-big.words { font-size:21px; } }
+  /* Under 290 (320px phones): the points line goes too (the ply count stays)
+     so the change chip keeps its caption. */
+  @container (max-width: 290px) { .wp .pts { display:none; } }
+  /* Under 240 (the landscape column of a 568x320 phone): the ply count too;
+     the caption is what says why. */
+  @container (max-width: 240px) { .wp .wp-pts { display:none; } }
+  .wp-track { position:relative; height:12px; margin-top:8px; }
+  .wp-bar { display:flex; gap:2px; height:100%; border-radius:6px; overflow:hidden; }
+  /* Mine: solid, from the left, always; theirs: a light step of their own
+     hue, so the split also reads in grayscale (luminance, not hue). */
+  .wp-me { width:50%; background:var(--mine); transition: width .35s ease; }
+  .wp-opp { flex:1; background:var(--opp-tint); }
+  .wp.p0 .wp-bar, .wp.p100 .wp-bar { gap:0; }
+  .wp.p0 .wp-me { display:none; }
+  /* 50% mark: ink ticks outside the bar, a strip-coloured notch through it. */
+  .wp-mid { position:absolute; left:50%; top:-4px; bottom:-4px; width:2px; margin-left:-1px;
+            background:var(--ink); opacity:.6; border-radius:1px; }
+  .wp-mid::after { content:""; position:absolute; left:0; right:0; top:4px; bottom:4px;
+                   background:var(--wp-bg); }
+  /* Tones come from the probability, not the raw score (the score inflates
+     2x/3x after ply 80/120; the probability does not). */
+  .wp.caution { --wp-bg:#FFF3D4; border-color:#D99A1E; }
+  .wp.caution .wp-lab b { color:#7A4A00; }
+  .wp.alert { --wp-bg:#FFE4D3; border-color:#C2410C; }
+  .wp.alert .wp-lab b { color:#9A3412; }
+  .wp.alert .wp-pts b.han { color:#A93226; }   /* #C0392B is 4.48:1 on this background */
+  .wp.matewin, .wp.won { --wp-bg:#E3F2FD; border-color:var(--mine); --sub:#333; }
+  .wp.side-han.matewin, .wp.side-han.won { --wp-bg:#FBE9E7; }
+  .wp.matewin .wp-big, .wp.matewin .wp-lab b, .wp.won .wp-big, .wp.won .wp-lab b { color:var(--mine-ink); }
+  .wp.matelose { --wp-bg:#2E3B47; border-color:#2E3B47; --ink:#fff; --sub:#e6e9ec; }
+  .wp.matelose .wp-big, .wp.matelose .wp-lab b { color:#FFD08A; }
+  .wp.matelose .wp-pts b { color:#fff; }
+  .wp.matelose .wp-bar { box-shadow: 0 0 0 1.5px rgba(255,255,255,.9); }
+  .wp.lost .wp-big { color:#37474F; }
+  /* Not computed for this position: grey it, keep it where it was. */
+  .wp.dim .wp-big { color:#6b6b6b; }
+  .wp.dim .wp-track, .wp.book .wp-track { opacity:.45; }
+  .wp.none .wp-me, .wp.none .wp-opp { background:#d9d3c5; }
+  .wp.flash { animation: wpFlash .9s ease-out 1; }
+  @keyframes wpFlash { 0%,40% { box-shadow: inset 0 0 0 3px rgba(194,65,12,.9); }
+                       100% { box-shadow: inset 0 0 0 3px rgba(194,65,12,0); } }
+
+  /* ---- Result box: fixed 104px, directly under the board ------------------
+     banner (danger, always present) / recommendation / one line of detail.
+     Because every row is always present and always the same size, the box
+     never appears/disappears and the layout cannot shake -- only colour and
+     text change. It used to be min-height 132px of mostly blank space that
+     started below the fold. */
+  #result { height:104px; margin:8px 0 0; padding:10px 12px;
+            background:var(--card); border-radius:10px; font-size:14px; overflow:hidden; }
+  .banner { position:relative; height:30px; display:flex; align-items:center; gap:6px;
+            padding:0 10px; border-radius:6px; font-weight:600; font-size:13px;
+            white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .bn-ok { background:#e8f0e8; color:#2e5d34; }
+  .bn-idle { background:#e6e2d8; color:#4f4a40; }
+  .bn-warn { background:#f9a825; color:#222; }
+  .bn-bad { background:#bf360c; color:#fff; }          /* was #e65100: 3.8:1 with white */
+  .bn-critical { background:#b71c1c; color:#fff; }
+  .bn-lost { background:#37474F; color:#fff; }
+  .banner .prog { position:absolute; left:0; bottom:0; height:3px; width:0; background:currentColor;
+                  opacity:.5; animation: prog 3.5s linear forwards; }
+  @keyframes prog { to { width:96%; } }
+  .rec { height:26px; margin-top:8px; display:flex; align-items:center; gap:6px; font-size:16px;
+         white-space:nowrap; overflow:hidden; }
+  .rec-tag { flex:none; font-size:12px; font-weight:700; color:#fff; background:var(--rec);
+             border-radius:5px; padding:2px 6px; }
+  .rec-tag.book { background:transparent; color:var(--cho); box-shadow: inset 0 0 0 1px var(--cho); }
+  .rec-tag.key { background:var(--down); }
+  .rec-tag.keyup { background:var(--up); }
+  /* Too long for the row (a narrow phone, the landscape column): shrunk to fit
+     by fitText, down to 11px, and only then ellipsized. */
+  .rec .txt { overflow:hidden; text-overflow:ellipsis; }
+  .rec.placeholder { font-size:13px; color:var(--muted); }
+  .meta { height:18px; line-height:18px; margin-top:2px; font-size:12px; color:var(--muted); white-space:nowrap;
+          overflow:hidden; text-overflow:ellipsis; }
+  /* An error takes the recommendation and detail rows (the same 54px): the
+     whole message, wrapped, three lines at a time, scrollable, scrolled to its
+     last line -- the one that says what went wrong. */
+  .rec.err { display:block; height:46px; white-space:pre-wrap; overflow-wrap:anywhere;
+             overflow-y:auto; overscroll-behavior:contain; font-size:13px; line-height:15.3px; color:#4f4a40; }
+
+  #judge { margin-top:8px; padding:14px; border-radius:8px; font-size:15px; display:none;
            text-align:center; font-weight:600; }
   #judge.cho { background:#E3F2FD; color:#1565C0; }
   #judge.han { background:#FBE9E7; color:#C0392B; }
@@ -67,7 +194,10 @@
   /* Secondary controls fold away so the board sits near the top of a phone
      screen instead of below five rows of wrapped buttons. */
   #game { display: block; }
-  details.tools { margin-bottom: 10px; }
+  /* The thumb zone: undo/flip and the analyse row sit under the result. */
+  .actions { margin-top:8px; }
+  .actions button, .anarow button { flex:1; padding-left:8px; padding-right:8px; }
+  details.tools { margin: 0 0 6px; }
   details.tools > summary { list-style: none; cursor: pointer; min-height: 44px;
       display: flex; align-items: center; gap: 6px; font-size: 14px; color:#555;
       padding: 0 4px; }
@@ -75,10 +205,39 @@
   details.tools > summary::after { content: "▾"; transition: transform .15s; }
   details.tools[open] > summary::after { transform: rotate(180deg); }
 
+  /* ---- 복기 · 승률 흐름 ---------------------------------------------------- */
+  .rv { background:var(--card); border-radius:10px; padding:10px 12px 12px; }
+  .rv h3 { margin:0 0 2px; font-size:14px; }
+  .rv .sub { font-size:12px; color:var(--muted); margin-bottom:6px; }
+  .rv svg { display:block; width:100%; height:auto; touch-action:pan-y; cursor:crosshair; }
+  .rv .axis { fill:var(--muted); font-size:10px; }
+  .rv .zone { font-size:10px; font-weight:700; }
+  .rv .readout { font-size:13px; line-height:1.45; min-height:38px; margin-top:6px; color:#333; }
+  .rv ol { margin:4px 0 0; padding:0; list-style:none; }
+  .rv li button { width:100%; display:flex; gap:10px; align-items:center; text-align:left;
+                  min-height:52px; padding:6px 10px; margin-top:6px; font-size:13px; }
+  .rv li button.key { border:2px solid var(--down); }
+  .rv li button.keyup { border:2px solid var(--up); }
+  .rv li button[aria-pressed="true"] { background:#fffdf6; box-shadow:0 0 0 3px rgba(0,0,0,.18); }
+  .rv .d { flex:none; width:58px; font-weight:800; font-size:14px; font-variant-numeric:tabular-nums; }
+  .rv .d.down { color:var(--down); } .rv .d.up { color:var(--up); }
+  .rv .t { flex:1; min-width:0; }
+  .rv .t small { display:block; color:var(--muted); font-size:12px; }
+  .badge { display:inline-block; font-size:11px; font-weight:700; color:#fff; background:var(--down);
+           border-radius:4px; padding:0 5px; margin-left:4px; vertical-align:1px; }
+  .badge.up { background:var(--up); }
+  .rv .legend { font-size:12px; color:var(--muted); margin-top:8px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .wp-me { transition:none; } .wp.flash { animation:none; } .banner .prog { animation:none; width:50%; }
+  }
+
   /* Landscape on a phone is short: put the board beside the panel rather than
      above it, or neither fits. */
   @media (orientation: landscape) and (max-height: 560px) {
     .wrap { max-width: none; }
+    /* The heading is the 44px that pushed the board off the bottom. */
+    body.playing h1 { display:none; }
     #game { display: grid; grid-template-columns: auto minmax(240px, 1fr);
             column-gap: 14px; align-items: start; }
     /* The board takes the left column and spans however many rows the panel
@@ -88,7 +247,9 @@
        row and the panel would start below the board. */
     #game > canvas { grid-column: 1; grid-row: 1 / span 99; align-self: start; }
     #game > *:not(canvas) { grid-column: 2; }
-    #game > #result { max-height: 40vh; overflow: auto; }
+    /* Fixed height now, so it needs no scroll box of its own (it was
+       max-height:40vh; overflow:auto). */
+    #game > #result { margin-top: 0; }
   }
 </style>
 </head>
@@ -117,7 +278,7 @@
         <option value="cho">초 (파랑)</option>
         <option value="han">한 (빨강)</option>
       </select>
-      <span style="color:#888;font-size:13px;">선택한 쪽이 아래(6시)에 오고, 그 쪽 차례에만 추천 수가 표시됩니다.</span>
+      <span style="color:#5f5a50;font-size:13px;">선택한 쪽이 아래(6시)에 오고, 그 쪽 차례에만 추천 수가 표시됩니다.</span>
     </div>
     <div class="row">
       <button class="primary" id="startBtn">분석 시작</button>
@@ -125,10 +286,43 @@
   </div>
 
   <div id="game" style="display:none;">
-    <div class="row">
-      <button id="undoBtn" style="flex:1;">한수 무르기</button>
-      <button id="flipBtn" style="flex:1;">판 뒤집기</button>
+    <!-- 1. Win probability: the first thing in the game view, both orientations. -->
+    <section id="winStrip" class="wp side-cho none" aria-label="이길 확률">
+      <div class="wp-row">
+        <div class="wp-big" id="wpBig" aria-hidden="true">—</div>
+        <div class="wp-lab" aria-hidden="true"><div id="wpL1"><b>분석 전</b></div><div id="wpL2">최선 수를 누르면 계산</div></div>
+        <div class="wp-pts" id="wpPts" title="점수제 (한 덤 1.5 포함) · 진행 수"></div>
+      </div>
+      <div class="wp-track" id="wpMeter" role="meter" aria-label="내 이길 확률"
+           aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" aria-valuetext="분석 전">
+        <div class="wp-bar"><div class="wp-me" id="wpMe"></div><div class="wp-opp"></div></div>
+        <div class="wp-mid" aria-hidden="true"></div>
+      </div>
+      <div id="wpLive" class="sr-only" aria-live="polite"></div>
+    </section>
+
+    <div id="status" role="status">기물을 옮기며 국면을 만들고, 최선 수 버튼으로 분석하세요.</div>
+    <canvas id="board" width="450" height="500"></canvas>
+
+    <!-- 2. The recommendation, directly under the board, fixed height. -->
+    <div id="result"></div>
+
+    <!-- 3. The thumb zone (undo/flip used to sit above the board). -->
+    <div class="row actions">
+      <button id="undoBtn">↶ 한수 무르기</button>
+      <button id="flipBtn">⇅ 판 뒤집기</button>
     </div>
+    <div class="row anarow">
+      <button class="cho" id="anaCho">초 최선 수</button>
+      <button class="han" id="anaHan">한 최선 수</button>
+      <button id="judgeBtn">점수 판정</button>
+    </div>
+    <div id="judge"></div>
+
+    <details class="tools" id="review">
+      <summary>복기 · 승률 흐름</summary>
+      <div class="rv" id="rv"></div>
+    </details>
 
     <details class="tools">
       <summary>설정 · 기보</summary>
@@ -142,7 +336,7 @@
         <button id="passBtn">한수 쉼</button>
       </div>
       <div class="row">
-        <label><input type="checkbox" id="autoChk" checked /> 자동 분석 (수를 둘 때마다 최선 수 표시)</label>
+        <label><input type="checkbox" id="autoChk" checked /> 자동 분석 (내 차례마다 최선 수)</label>
       </div>
       <div class="row">
         <button id="saveBtn">기보 저장</button>
@@ -151,25 +345,6 @@
         <input type="file" id="loadFile" accept="application/json,.json" style="display:none" />
       </div>
     </details>
-
-    <div class="scorebar">
-      <span><b class="cho">초</b> <span id="choScore">0</span>점</span>
-      <span class="moveinfo">수: <span id="moveCount">0</span> / 200</span>
-      <span><b class="han">한</b> <span id="hanScore">0</span>점 <small>(덤 1.5 포함)</small></span>
-    </div>
-
-    <div id="status">기물을 옮기며 국면을 만들고, 최선 수 버튼으로 분석하세요.</div>
-    <canvas id="board" width="450" height="500"></canvas>
-
-    <div class="row" style="margin-top:12px;">
-      <button class="cho" id="anaCho" style="flex:1;">초(파랑) 최선 수</button>
-      <button class="han" id="anaHan" style="flex:1;">한(빨강) 최선 수</button>
-    </div>
-    <div class="row">
-      <button id="judgeBtn" style="flex:1;">점수 판정 (승부 확인)</button>
-    </div>
-    <div id="result"></div>
-    <div id="judge"></div>
   </div>
 </div>
 
@@ -192,19 +367,28 @@ function viewportHeight(){
 
 // How much vertical space the board does not get. Everything above it is
 // measured rather than assumed, so adding a control cannot silently push the
-// board off the bottom of a small phone; below it a fixed slice is kept for
-// the analyse buttons and the first line of the recommendation. Reserving the
-// whole result box was tried and is worse -- it is 132px of mostly blank space
-// and paying for it took the board on a 667px phone down to 216px, where the
-// cells are too small to tap.
-const BELOW_BOARD = 96;
+// board off the bottom of a small phone. Below it sits the fixed-height result
+// box and nothing else that has to be on screen, so that is measured too (it
+// used to be a fixed BELOW_BOARD = 96, which stopped covering the rows under
+// the board: on 390x844 the recommendation began at y=773). The undo and
+// analyse rows under the result are allowed to fall below the fold on a short
+// phone; the recommendation is not.
+function belowBoard(){
+  const r=document.getElementById('result');
+  return (r ? r.offsetHeight : 104) + 8;
+}
 
 function reservedHeight(host, shortLandscape){
-  if(shortLandscape) return 16;             // board and panel sit side by side
-  const h=host.getBoundingClientRect(), c=cvs.getBoundingClientRect();
-  const above=c.top-h.top;                  // toolbar, scorebar, status line
+  const c=cvs.getBoundingClientRect();
+  // Board and panel sit side by side: only what is above the board counts.
+  // This used to be a flat 16, which ignored the heading (and the Pages
+  // banner), so the board ran 40px past the bottom of an 844x390 screen.
+  if(shortLandscape)
+    return Math.round(c.top+window.scrollY)+(parseFloat(getComputedStyle(document.body).paddingBottom)||12);
+  const h=host.getBoundingClientRect();
+  const above=c.top-h.top;                  // win strip, status line
   const title=h.top+window.scrollY;         // page heading and the safe area
-  return title+above+BELOW_BOARD;
+  return title+above+belowBoard();
 }
 
 // Size the board to the screen. Two things matter on a phone that do not on a
@@ -223,7 +407,10 @@ function fitBoard(){
   // 9 files wide, so under that the cells stop being reliable touch targets
   // and a slightly taller page is the better trade.
   const floor=Math.min(avail, 300);
-  const w=Math.max(floor, Math.min(avail, maxH*(BW/BH), 520));
+  // In the landscape grid `avail` is the whole row; the board may only take
+  // what the panel (min 240px + the 14px gap) leaves.
+  const room=shortLandscape ? Math.max(floor, avail-254) : avail;
+  const w=Math.max(floor, Math.min(room, maxH*(BW/BH), 520));
   const h=w*(BH/BW);
   const dpr=Math.min(window.devicePixelRatio||1, 3);
   cvs.style.width=w+'px';
@@ -232,6 +419,7 @@ function fitBoard(){
   cvs.height=Math.round(h*dpr);
   boardScale=(w*dpr)/BW;
   if(board) draw();
+  fitRows();                                // the column width may have changed too
 }
 
 // Measuring in the frame that unhid the board reads a layout that has not
@@ -313,12 +501,426 @@ function computeScores(){
   return {cho, han};
 }
 
-function updateScoreBar(){
-  const s=computeScores();
-  document.getElementById('choScore').textContent=s.cho;
-  document.getElementById('hanScore').textContent=s.han.toFixed(1);
-  document.getElementById('moveCount').textContent=moveCount;
+// =====================================================================
+// Win probability. Every number here comes from the /api/analyze answers the
+// page already asks for on the player's own turn: no extra engine calls.
+//
+// The engine sends res.winProb, the chance that the SIDE TO MOVE wins, and
+// res.mateIn, the attacker's moves to a forced mate (positive: the side to
+// move mates; negative: it is mated; null: no mate). Both are computed in one
+// place, janggi/winprob.py, by the Flask server and the in-browser engine
+// alike, so the page holds no copy of the formula -- it only turns the figure
+// round to the player's side (pMy).
+// =====================================================================
+// Displayed percentage: never 0 or 100 without a proven mate.
+function pct(p){ return Math.min(99, Math.max(1, Math.round(p*100))); }
+function bandOf(v){
+  if(v>=80) return {word:'승세', tone:'calm'};
+  if(v>=60) return {word:'우세', tone:'calm'};
+  if(v>40)  return {word:'팽팽', tone:'calm'};
+  if(v>20)  return {word:'불리', tone:'caution'};
+  return {word:'위기', tone:'alert'};
 }
+// server.py's time manager: requested 2/4/6 -> 2.5/3.5/5.5 s of search.
+function analysisSecs(){
+  const t=parseFloat(document.getElementById('time').value);
+  return t<=1.5 ? 1.2 : t<=3 ? 2.5 : Math.min(t,6)-0.5;
+}
+const SIDE_KO={cho:'초', han:'한'};
+// The change chip's flat band: a change under this many points reads "지난
+// 차례와 비슷", and a swing that small is never named the 승부처 either.
+const FLAT=3;
+// janggi/evaluate.py's endgame lock adds the material sum to the score again
+// from ply 80 (x2) and ply 120 (x3); they are also the phase starts of
+// janggi/winprob.PHASE_SLOPES. The probability steps there on its own (on
+// self-play a median of ~4 points between my turns either side of the step,
+// against ~1.3 elsewhere, and mostly away from 50%), so a change across one
+// is labelled as the scale changing, never blamed on the move.
+const LOCK_PLIES=[80,120];
+function lockBetween(a, b){ let L=0; for(const x of LOCK_PLIES) if(a<x && b>=x) L=x; return L; }
+
+// One entry per analysed position of the current line, keyed by (ply, side):
+// ply = gibo.length (the game_ply the server used), side = the side searched,
+// which is always the side to move (out-of-turn analyses are not recorded).
+//   {ply, side, score, book, depth, winProb, mateIn,
+//    best:{fr,fc,tr,tc,piece}|null, played:{fr,fc,tr,tc,piece}|null,
+//    res (in memory only)}
+let evals=[];
+let anaSeq=0;        // newest analysis request; older answers are dropped
+let posGen=0;        // bumped on every move, undo, pass, load and new game
+let pending=null;    // {ply, side, secs} while an on-turn analysis is in flight
+let gameResult=null; // {win, why} once the game has ended
+
+function numOrNull(x){ return (typeof x==='number' && isFinite(x) && x>=0 && x<=1) ? x : null; }
+function mateOrNull(x){ return (Number.isInteger(x) && x!==0) ? x : null; }
+// A move read from a loaded file, or null. The file is untrusted and these
+// fields are later written into the page (the 복기 rows, the opponent-turn
+// line), so anything that is not a square on the board is dropped.
+function moveOrNull(m){
+  const sq=(v,n)=>Number.isInteger(v) && v>=0 && v<n;
+  if(!m || typeof m!=='object' || !sq(m.fr,ROWS) || !sq(m.fc,COLS) || !sq(m.tr,ROWS) || !sq(m.tc,COLS)) return null;
+  return {fr:m.fr, fc:m.fc, tr:m.tr, tc:m.tc,
+          piece: Object.prototype.hasOwnProperty.call(FULL, m.piece) ? m.piece : '?'};
+}
+function findEval(ply, side){
+  for(const e of evals) if(e.ply===ply && e.side===side) return e;
+  return null;
+}
+function recordEval(ply, side, res){
+  evals=evals.filter(e=>!(e.ply===ply && e.side===side));
+  const m=res.move, cell=m ? board[m.fr][m.fc] : null, book=!!res.fromBook;
+  evals.push({ply, side, score:res.score, book, depth:res.depthReached||0,
+    // a book move was not searched: no probability (the API sends null)
+    winProb: book ? null : numOrNull(res.winProb),
+    mateIn: book ? null : mateOrNull(res.mateIn),
+    best: m ? {fr:m.fr, fc:m.fc, tr:m.tr, tc:m.tc, piece: cell ? cell[1] : '?'} : null,
+    played:null, res});
+}
+function sameMove(a,b){ return !!a && !!b && a.fr===b.fr && a.fc===b.fc && a.tr===b.tr && a.tc===b.tc; }
+function deviated(e){ return !!(e && e.best && e.played && !sameMove(e.best, e.played)); }
+// An entry the strip and the chart can use: searched, with a probability.
+function hasP(e){ return !!e && !e.book && e.winProb!=null; }
+// MY probability for an entry, 0..1. The API's figure is the side to move's.
+function pMy(e){ return e.side===mySide ? e.winProb : 1-e.winProb; }
+// A forced mate from MY side: {n: the attacker's own moves, win}, or null.
+function mateOf(e){
+  return (e && e.mateIn) ? {n:Math.abs(e.mateIn), win:(e.mateIn>0)===(e.side===mySide)} : null;
+}
+// Displayed integer: 1..99, or 0/100 for a mate.
+function vOf(e){ const m=mateOf(e); return m ? (m.win ? 100 : 0) : pct(pMy(e)); }
+// My most recent searched (non-book) entry strictly before `ply`.
+function prevMine(ply){
+  let best=null;
+  for(const e of evals)
+    if(e.side===mySide && hasP(e) && e.ply<ply && (!best || e.ply>best.ply)) best=e;
+  return best;
+}
+
+// Pure: the strip's whole look for the current state.
+function wpModel(){
+  const me=SIDE_KO[mySide], ply=gibo.length;
+  if(gameOver && gameResult){
+    const w=gameResult.win;
+    return {tone: w?'won':'lost', big: w?'승리':'패배', words:true,
+      l1:'<b>'+(w?'내가 이김':'상대가 이김')+'</b>', l2:gameResult.why,
+      fill: w?100:0, say:(w?'승리':'패배')+', '+gameResult.why};
+  }
+  const isPending=!!pending && pending.ply===ply && pending.side===turn;
+  const cur=isPending ? null : findEval(ply, turn);
+  if(cur){
+    if(cur.book) return {tone:'book', none:true, big:'정석', words:true, l1:'<b>정석 구간</b>',
+      l2:'기보의 수 · 승률 생략', fill:50, say:'정석 구간, 승률 계산 생략'};
+    if(!hasP(cur)) return {tone:'none', big:'—', l1:'<b>승률 없음</b>',
+      l2:'엔진 응답에 승률이 없습니다', fill:50, say:null};
+    const m=mateOf(cur);
+    if(m){
+      return m.win
+        ? {tone:'matewin', big:'외통 '+m.n+'수', words:true, l1:'✓ <b>이기는 수순</b>',
+           l2:'추천 수대로 두세요', fill:100, say:'외통 '+m.n+'수, 이기는 수순'}
+        : {tone:'matelose', big:'외통 '+m.n+'수', words:true, l1:'⚠ <b>상대 외통 수순</b>',
+           l2:'궁 수비 최우선', fill:0, plunge:true, say:'상대 외통 '+m.n+'수, 궁 수비 최우선'};
+    }
+    const v=pct(pMy(cur)), band=bandOf(v);
+    let l2='첫 분석', d=null, plunge=false, sayD='';
+    if(cur.side!==mySide) l2='상대 차례 국면 (수동 분석)';
+    else {
+      const prev=prevMine(ply);
+      if(prev){
+        d=v-vOf(prev);
+        const lock=lockBetween(prev.ply, ply);
+        const amt=(d>0 ? d+' 올라감' : (-d)+' 내려감');
+        if(Math.abs(d)<FLAT){ l2='<span class="wp-d flat">＝</span> 지난 차례와 비슷'; sayD=', 지난 차례와 비슷'; }
+        else if(lock){
+          // The scale changed between the two readings: no plunge, no blame.
+          l2='<span class="wp-d '+(d>0?'up':'down')+'">'+(d>0?'▲'+d:'▼'+(-d))+'%p</span> '+lock+'수 평가 기준 변경';
+          sayD=', '+lock+'수부터 평가 기준이 바뀌어 '+amt;
+        } else {
+          const why=(d<=-5 && deviated(prev)) ? '추천과 다름' : '지난 차례보다';
+          if(d>0) l2='<span class="wp-d up">▲'+d+'%p</span> '+why;
+          else { plunge=d<=-10;
+            l2='<span class="wp-d '+(plunge?'plunge':'down')+'">▼'+(-d)+'%p</span> '+why; }
+          sayD=', 지난 차례보다 '+amt;
+        }
+      }
+    }
+    return {tone:band.tone, big:v+'<small>%</small>',
+      l1:(band.tone==='calm'?'':'⚠ ')+'<b>'+band.word+'</b><span class="who"> · 내('+me+') 이길 확률</span>',
+      l2, fill:v, plunge, say:'이길 확률 '+v+'퍼센트, '+band.word+sayD};
+  }
+  // Nothing computed for THIS position: show my last value, greyed.
+  const last=prevMine(ply+1);
+  const lm=mateOf(last);
+  const lastBig = !last ? '—' : lm ? '외통' : vOf(last)+'<small>%</small>';
+  const lastFill = last ? vOf(last) : 50;
+  const dimBase={dim:true, big:lastBig, words:!!lm, fill:lastFill};
+  if(isPending) return {...dimBase, tone:'pending', l1:'<b>계산 중…</b>',
+    l2:'약 '+pending.secs+'초 · 직전 값', say:null, none:!last};
+  if(turn!==mySide){
+    const mine=findEval(ply-1, mySide);   // the position I just moved from
+    const how = !last ? (autoAnalyze?'내 차례에 자동 계산':'최선 수를 누르면 계산')
+              : (mine && mine.played && mine.best) ? (deviated(mine)?'추천과 다름 · 직전 값':'추천대로 둠 · 직전 값')
+              : '내가 두기 전 값';
+    return {...dimBase, tone:last?'stale':'none', l1:'⏳ <b>상대 차례</b>', l2:how, say:null};
+  }
+  if(last) return {...dimBase, tone:'stale', l1:'<b>분석 전</b>', l2:'직전 값 · 최선 수로 갱신', say:null};
+  return {tone:'none', big:'—', l1:'<b>분석 전</b>', l2:'최선 수를 누르면 계산', fill:50, say:null};
+}
+
+// Paints a model: text, classes and the fill width only, so the height never changes.
+function wpPaint(el, vm){
+  const s=computeScores();
+  const me=mySide, op=me==='cho'?'han':'cho';
+  const val={cho:String(s.cho), han:s.han.toFixed(1)};
+  el.className='wp side-'+me+' '+vm.tone+(vm.dim?' dim':'')+(vm.none?' none':'')+
+               (vm.fill<=0?' p0':'')+(vm.fill>=100?' p100':'');
+  const big=el.querySelector('.wp-big');
+  big.innerHTML=vm.big; big.classList.toggle('words', !!vm.words);
+  el.querySelector('#wpL1').innerHTML=vm.l1;
+  el.querySelector('#wpL2').innerHTML=vm.l2;
+  el.querySelector('.wp-pts').innerHTML=
+    '<div class="pts"><b class="'+me+'">'+SIDE_KO[me]+'</b> '+val[me]+' : <b class="'+op+'">'+SIDE_KO[op]+'</b> '+val[op]+'</div>'+
+    '<div>'+gibo.length+' / '+MOVE_LIMIT+'수</div>';
+  el.querySelector('.wp-me').style.width=Math.max(0, Math.min(100, vm.fill))+'%';
+  const meter=el.querySelector('.wp-track');
+  meter.setAttribute('aria-valuenow', String(Math.round(vm.fill)));
+  meter.setAttribute('aria-valuetext', vm.say ||
+    (el.querySelector('#wpL1').textContent+', '+el.querySelector('#wpL2').textContent));
+  fitText(el.querySelector('#wpL1'), 10); fitText(el.querySelector('#wpL2'), 10);
+  return vm;
+}
+// fresh=true only when a new engine answer was just recorded: the one moment a
+// plunge flashes and a screen reader hears the value.
+function renderWinStrip(fresh, extraSay){
+  const el=document.getElementById('winStrip');
+  const vm=wpPaint(el, wpModel());
+  if(fresh && vm.plunge){
+    el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+  }
+  if(fresh && vm.say) document.getElementById('wpLive').textContent=vm.say+(extraSay?'. '+extraSay:'');
+}
+
+// The score bar's three numbers (points and the move count) now live in the strip.
+function updateScoreBar(){ renderWinStrip(); }
+
+// The strip's captions and the result box's rows are one fixed-height line
+// each, so a line too long for its width (a 320px phone, the landscape
+// column, a large system font) is shrunk to fit, down to `min` px, before the
+// ellipsis takes anything: the end of a line is often the part that matters
+// (the destination square, the 승부처's percentages).
+function overflows(el){
+  if(el.scrollWidth>el.clientWidth) return true;
+  // scrollWidth is rounded: text 0.3px too wide reads as fitting, and gets
+  // an ellipsis all the same. The text's own extent is not rounded.
+  const r=document.createRange(); r.selectNodeContents(el);
+  return r.getBoundingClientRect().width>el.getBoundingClientRect().width+0.01;
+}
+function fitText(el, min){
+  if(!el) return;
+  el.style.fontSize='';
+  if(!overflows(el)) return;                // fits, or not laid out (hidden)
+  let fs=parseFloat(getComputedStyle(el).fontSize);
+  while(fs>min && overflows(el)){ fs=Math.max(min, fs-0.5); el.style.fontSize=fs+'px'; }
+}
+function fitRows(){
+  fitText(document.getElementById('wpL1'), 10); fitText(document.getElementById('wpL2'), 10);
+  document.querySelectorAll('#result .rec .txt').forEach(e=>fitText(e, 11));
+  fitText(document.querySelector('#result .meta'), 10);
+}
+
+// Result box: three fixed rows -- banner, recommendation, one line of detail.
+const DANGER_CLASS={ok:'bn-ok', warn:'bn-warn', bad:'bn-bad', critical:'bn-critical'};
+function moveText(m, piece){
+  return '<b>'+(FULL[piece]||'?')+'</b> '+coord(m.fr,m.fc)+' → '+coord(m.tr,m.tc);
+}
+// "평가 +2.0", or for a forced mate the move count instead of ±9999.9.
+function evalText(res, side){
+  const mi=mateOrNull(res.mateIn);
+  if(!mi){
+    const v=(res.score/100).toFixed(1);
+    return '평가 '+(v==='-0.0' ? '0.0' : (res.score>0?'+':'')+v);   // -4 cp is not "-0.0"
+  }
+  const iWin=(mi>0)===(side===mySide);
+  return iWin ? '외통 '+Math.abs(mi)+'수 (승)' : '상대 외통 '+Math.abs(mi)+'수 (패)';
+}
+function renderResult(kind, d){
+  d=d||{};
+  const rd=document.getElementById('result');
+  const banner=(cls, html, extra)=>'<div class="banner '+cls+'">'+html+(extra||'')+'</div>';
+  const ph=t=>'<div class="rec placeholder"><span class="txt">'+t+'</span></div>';
+  let bn, rec, meta='';
+  if(kind==='opp'){
+    const oppName=turn==='cho'?'초(파랑)':'한(빨강)';
+    bn=banner('bn-idle', '⏳ 상대 차례 — '+oppName);
+    rec=ph('상대 수를 판에 옮기면 바로 분석합니다.');
+    const e=findEval(gibo.length-1, mySide);
+    if(e && e.best && e.played)
+      meta='직전 추천 '+moveText(e.best, e.best.piece)+(deviated(e)?' · 다르게 둠':' · 그대로 둠 ✓');
+  } else if(kind==='busy'){
+    bn=banner('bn-idle', d.name+' 수읽기 중…', '<i class="prog" style="animation-duration:'+d.secs+'s"></i>');
+    rec=ph('약 '+d.secs+'초 걸립니다.');
+  } else if(kind==='rec'){
+    // Status banner: ALWAYS shown, in all four states (including a calm green
+    // "안정" when the engine sees no danger), so it never appears/disappears.
+    const res=d.res, lvl=(res.danger && res.danger.level) || 'ok';
+    bn=banner(DANGER_CLASS[lvl]||'bn-ok', lvl==='ok' ? '✓ 안정 — 위협 없음' : '⚠ '+(res.danger.text||''));
+    const cell=board[res.move.fr][res.move.fc];
+    const tag = res.fromBook ? '정석' : (d.side===mySide ? '추천' : SIDE_KO[d.side]+' 추천');
+    rec='<div class="rec"><span class="rec-tag'+(res.fromBook?' book':'')+'">'+tag+'</span><span class="txt">'+
+        moveText(res.move, cell?cell[1]:'?')+
+        (res.move.captured?' <span class="cap">('+FULL[res.move.captured]+' 잡음)</span>':'')+'</span></div>';
+    meta = res.fromBook ? '이전 기보에서 검증된 수 (계산 없이 즉시 추천)'
+         : evalText(res, d.side)+' · 깊이 '+res.depthReached+' · '+(res.nodes||0).toLocaleString()+' 노드';
+  } else if(kind==='over'){
+    const g=gameResult;
+    bn=banner(g.win?'bn-ok':'bn-lost', (g.win?'★ 승리':'■ 패배')+' — '+g.why);
+    const k=keySwing();
+    rec = k ? '<div class="rec"><span class="rec-tag '+(k.d<0?'key':'keyup')+'">승부처</span><span class="txt"><b>'+
+              (k.from.ply+1)+'수째</b> 내 수 '+(k.d<0?'▼':'▲')+Math.abs(k.d)+'%p ('+k.from.v+'→'+k.to.v+'%)</span></div>'
+            : ph(trailPoints().length>1 ? '크게 기운 수 없이 조금씩 기울었습니다.' : '분석 기록이 없어 흐름을 그릴 수 없습니다.');
+    meta = trailPoints().length>1 ? '아래 ‘복기 · 승률 흐름’에서 수마다 볼 수 있습니다.'
+                                  : '자동 분석을 켜고 두면 내 차례마다 기록됩니다.';
+  } else if(kind==='error'){
+    // As text, never markup (a Python traceback says "<module>"), and all of
+    // it: the box shows the end, where the reason is, and scrolls back up.
+    rd.innerHTML=banner('bn-idle', '오류')+'<div class="rec err"></div>';
+    const box=rd.querySelector('.err');
+    box.textContent=String(d.msg);
+    box.scrollTop=box.scrollHeight;
+    return;
+  } else {
+    bn=banner('bn-idle', d.msg||'대기 중');
+    rec=ph('분석하면 추천 수가 여기에 표시됩니다.');
+  }
+  rd.innerHTML=bn+rec+'<div class="meta">'+meta+'</div>';
+  rd.querySelectorAll('.rec .txt').forEach(e=>fitText(e, 11));
+  fitText(rd.querySelector('.meta'), 10);
+}
+
+// ---- 복기: my win % at each of my analysed turns --------------------------
+// evals only ever holds the current line: a move or an undo drops what lies
+// beyond it (a pass adds no ply and drops nothing).
+function trailPoints(){
+  return evals.filter(e=>e.side===mySide && hasP(e)).sort((a,b)=>a.ply-b.ply)
+    .map(e=>({e, ply:e.ply, v:vOf(e), mate:mateOf(e), dev:deviated(e)}));
+}
+function swingsOf(pts){
+  const out=[];
+  for(let i=1;i<pts.length;i++) out.push({i, from:pts[i-1], to:pts[i], d:pts[i].v-pts[i-1].v});
+  return out;
+}
+// 승부처: the biggest swing toward the final result after which the curve
+// never crossed back over 50%. Mid-game it uses the side the curve is on now.
+// A swing inside the flat band (50 -> 52) is not one: the strip itself called
+// it "지난 차례와 비슷".
+function keySwing(){
+  const pts=trailPoints(); if(pts.length<2) return null;
+  const losing = gameResult ? !gameResult.win : pts[pts.length-1].v<50;
+  let best=null;
+  for(const s of swingsOf(pts)){
+    const after=pts.slice(s.i);
+    const ok = Math.abs(s.d)>=FLAT &&
+               (losing ? (s.d<0 && s.from.v>=50 && after.every(p=>p.v<50))
+                       : (s.d>0 && s.from.v<=50 && after.every(p=>p.v>50)));
+    if(ok && (!best || Math.abs(s.d)>Math.abs(best.d))) best=s;
+  }
+  return best;
+}
+let rvSel=null;
+function renderReview(){
+  const root=document.getElementById('rv'); if(!root) return;
+  const pts=trailPoints();
+  const head='<h3>내('+SIDE_KO[mySide]+') 이길 확률 흐름</h3>'+
+    '<div class="sub">내 차례마다 분석한 값 · 빈 점은 추천과 다르게 둔 수</div>';
+  if(pts.length<2){
+    root.innerHTML=head+'<div class="readout">'+(pts.length?'내 차례가 한 번 더 분석되면 흐름이 그려집니다.':
+      '내 차례에 분석한 값이 쌓이면 여기에 그려집니다. (추가 계산 없음)')+'</div>';
+    return;
+  }
+  const W=342,H=150,L=32,R=8,T=8,B=18, pw=W-L-R, ph=H-T-B;
+  const lastPly=Math.max(gibo.length, pts[pts.length-1].ply);
+  // At most 7 tick labels: at 10-ply steps a 92-ply game ran "90" into "100수".
+  const step=lastPly>60?20:10, maxPly=Math.max(40, Math.ceil(lastPly/step)*step);
+  const X=p=>L+pw*p/maxPly, Y=v=>T+ph*(1-v/100);
+  const col=mySide==='cho'?'var(--cho)':'var(--han)';
+  const myTint=mySide==='cho'?'var(--cho-tint)':'var(--han-tint)', opTint=mySide==='cho'?'var(--han-tint)':'var(--cho-tint)';
+  const key=keySwing();
+  let s='<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="내 이길 확률 흐름 그래프">';
+  s+='<rect x="'+L+'" y="'+T+'" width="'+pw+'" height="'+(ph/2)+'" fill="'+myTint+'" opacity=".35"/>'+
+     '<rect x="'+L+'" y="'+Y(50)+'" width="'+pw+'" height="'+(ph/2)+'" fill="'+opTint+'" opacity=".35"/>';
+  s+='<text class="zone" x="'+(L+5)+'" y="'+(T+12)+'" fill="'+(mySide==='cho'?'#0D47A1':'#8E2A1F')+'">내 우세</text>'+
+     '<text class="zone" x="'+(L+5)+'" y="'+(T+ph-5)+'" fill="'+(mySide==='cho'?'#8E2A1F':'#0D47A1')+'">상대 우세</text>';
+  [0,50,100].forEach(g=>{
+    s+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+Y(g)+'" y2="'+Y(g)+'" stroke="#8a826f" stroke-width="1"'+(g===50?' stroke-dasharray="3 3"':' opacity=".5"')+'/>'+
+       '<text class="axis" x="'+(L-4)+'" y="'+(Y(g)+3)+'" text-anchor="end">'+g+'%</text>'; });
+  for(let t=0;t<=maxPly;t+=step)
+    s+='<text class="axis" x="'+X(t)+'" y="'+(H-5)+'" text-anchor="'+(t===0?'start':t+step>maxPly?'end':'middle')+'">'+t+(t+step>maxPly?'수':'')+'</text>';
+  s+='<polyline fill="none" stroke="'+col+'" stroke-width="2" stroke-linejoin="round" points="'+
+     pts.map(p=>X(p.ply).toFixed(1)+','+Y(p.v).toFixed(1)).join(' ')+'"/>';
+  if(key){
+    const kc=key.d<0?'var(--down)':'var(--up)', lx=X(key.to.ply)+6, right=lx>W-80;
+    s+='<line x1="'+X(key.from.ply)+'" y1="'+Y(key.from.v)+'" x2="'+X(key.to.ply)+'" y2="'+Y(key.to.v)+'" stroke="'+kc+'" stroke-width="4" stroke-linecap="round"/>'+
+       '<text x="'+(right?X(key.from.ply)-6:lx)+'" y="'+(key.d<0?Y(key.from.v)+4:Y(key.from.v)-4)+'" font-size="11" font-weight="800" fill="'+kc+'" text-anchor="'+(right?'end':'start')+'">'+
+       (key.from.ply+1)+'수 '+(key.d<0?'▼':'▲')+Math.abs(key.d)+'%p</text>';
+  }
+  s+='<line id="rvCross" x1="-9" x2="-9" y1="'+T+'" y2="'+(T+ph)+'" stroke="#222" stroke-width="1" opacity=".6"/>';
+  let firstMate=true;
+  pts.forEach(p=>{
+    const x=X(p.ply), y=Y(p.v);
+    if(p.mate && firstMate){ firstMate=false;
+      s+='<rect x="'+(x-4.5)+'" y="'+(y-4.5)+'" width="9" height="9" transform="rotate(45 '+x+' '+y+')" fill="#263238" stroke="#fff" stroke-width="1.5"/>'; }
+    else if(!p.mate)
+      s+='<circle cx="'+x+'" cy="'+y+'" r="3.5" fill="'+(p.dev?'var(--card)':col)+'" stroke="'+(p.dev?col:'var(--card)')+'" stroke-width="'+(p.dev?2:1)+'"/>';
+  });
+  s+='<circle id="rvDot" cx="-9" cy="-9" r="6" fill="none" stroke="#222" stroke-width="2"/>';
+  s+='</svg>';
+  // Swings worth a look: |d| >= 15%p, the 승부처 pinned first, at most 4.
+  const sw=swingsOf(pts).filter(x=>Math.abs(x.d)>=15).sort((a,b)=>Math.abs(b.d)-Math.abs(a.d));
+  if(key){ const i=sw.findIndex(x=>x.i===key.i); if(i>0) sw.unshift(sw.splice(i,1)[0]); }
+  const rows=sw.slice(0,4).map(x=>{
+    const f=x.from.e, up=x.d>0, isKey=key && key.i===x.i, lock=lockBetween(x.from.ply, x.to.ply);
+    const known=!!(f.played && f.best);
+    let why='';
+    if(known && deviated(f)) why='둔 수 '+moveText(f.played, f.played.piece)+' · 추천 '+moveText(f.best, f.best.piece);
+    else if(lock) why=(known?'추천대로 둠 — ':'')+lock+'수 평가 기준 변경';
+    else if(known) why='추천대로 둠 — '+(up?'상대 실수':'상대의 좋은 응수');
+    return '<li><button type="button" data-i="'+x.i+'" class="'+(isKey?(up?'keyup':'key'):'')+'" aria-pressed="false">'+
+      '<span class="d '+(up?'up':'down')+'">'+(up?'▲':'▼')+Math.abs(x.d)+'%p</span>'+
+      '<span class="t">'+(x.from.ply+1)+'수째 내 수 이후 · '+x.from.v+'% → '+x.to.v+'%'+
+      (isKey?'<span class="badge'+(up?' up':'')+'">승부처</span>':'')+(why?'<small>'+why+'</small>':'')+'</span></button></li>';
+  }).join('');
+  const peak=pts.reduce((a,b)=>b.v>a.v?b:a), mateP=pts.find(p=>p.mate);
+  const summary = key
+    ? '<b>승부처 '+(key.from.ply+1)+'수째</b> ('+key.from.v+'% → '+key.to.v+'%) 이후 다시 50%를 '+(key.d<0?'넘지 못했습니다.':'내주지 않았습니다.')
+    : '최고 '+peak.v+'% ('+(peak.ply+1)+'수째)';
+  root.innerHTML=head+s+
+    '<div class="readout" id="rvRead">'+summary+(mateP?' '+(mateP.ply+1)+'수째부터 외통 수순.':'')+'</div>'+
+    (rows?'<ol aria-label="크게 기운 수">'+rows+'</ol>':'<div class="legend">15%p 넘게 기운 수가 없습니다.</div>')+
+    '<div class="legend">그래프나 항목을 누르면 그 수의 값이 보입니다. ● 추천대로 · ○ 다르게 둠 · ◆ 외통</div>';
+  const svg=root.querySelector('svg'), read=root.querySelector('#rvRead');
+  const show=i=>{
+    const p=pts[i], prev=pts[i-1];
+    const cross=root.querySelector('#rvCross'), dot=root.querySelector('#rvDot');
+    cross.setAttribute('x1',X(p.ply)); cross.setAttribute('x2',X(p.ply));
+    dot.setAttribute('cx',X(p.ply)); dot.setAttribute('cy',Y(p.v));
+    const f=prev && prev.e;
+    read.innerHTML='<b>'+(p.ply+1)+'수째</b> (내 차례) 이길 확률 <b>'+(p.mate?(p.v?'외통 승':'외통 패'):p.v+'%')+'</b>'+
+      (prev?' · 직전 '+prev.v+'% ('+(p.v===prev.v?'＝':(p.v>prev.v?'▲':'▼')+Math.abs(p.v-prev.v))+')':'')+
+      (f && f.played && f.best ? '<br>그 사이 내 수: '+moveText(f.played, f.played.piece)+(deviated(f)?' · 추천은 '+moveText(f.best, f.best.piece):' (추천대로)'):'');
+    root.querySelectorAll('li button').forEach(b=>b.setAttribute('aria-pressed', String(+b.dataset.i===i)));
+    rvSel=i;
+  };
+  const nearest=ev=>{
+    const r=svg.getBoundingClientRect(), x=(ev.clientX-r.left)*W/r.width;
+    let bi=0; pts.forEach((p,i)=>{ if(Math.abs(X(p.ply)-x)<Math.abs(X(pts[bi].ply)-x)) bi=i; });
+    return bi;
+  };
+  svg.addEventListener('pointerdown', ev=>show(nearest(ev)));
+  svg.addEventListener('pointermove', ev=>{ if(ev.buttons) show(nearest(ev)); });
+  root.querySelectorAll('li button').forEach(b=>b.addEventListener('click', ()=>show(+b.dataset.i)));
+  if(rvSel!=null && rvSel<pts.length) show(rvSel);
+}
+function openReview(){ const r=document.getElementById('review'); r.open=true; renderReview(); }
+document.getElementById('review').addEventListener('toggle', e=>{ if(e.target.open) renderReview(); });
 
 function draw(){
   ctx.setTransform(boardScale,0,0,boardScale,0,0);
@@ -329,6 +931,13 @@ function draw(){
   const pal=r0=>{ctx.beginPath();ctx.moveTo(M+3*CW,M+r0*CH);ctx.lineTo(M+5*CW,M+(r0+2)*CH);
     ctx.moveTo(M+5*CW,M+r0*CH);ctx.lineTo(M+3*CW,M+(r0+2)*CH);ctx.stroke();};
   pal(0);pal(7);
+  // Last move: an empty ring where it came from, a dark ring where it went,
+  // so a move relayed onto the wrong square is visible at a glance.
+  const lm=gibo.length ? gibo[gibo.length-1] : null;
+  if(lm){const f=toDisp(lm.fr,lm.fc),t=toDisp(lm.tr,lm.tc);
+    ctx.strokeStyle='rgba(60,40,15,0.75)';ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(M+f[1]*CW,M+f[0]*CH,7,0,7);ctx.stroke();
+    ctx.lineWidth=3;ctx.beginPath();ctx.arc(M+t[1]*CW,M+t[0]*CH,21,0,7);ctx.stroke();}
   if(hint){const f=toDisp(hint.fr,hint.fc),t=toDisp(hint.tr,hint.tc);
     const x1=M+f[1]*CW,y1=M+f[0]*CH,x2=M+t[1]*CW,y2=M+t[0]*CH;
     ctx.strokeStyle='rgba(46,125,50,0.85)';ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
@@ -365,6 +974,16 @@ cvs.addEventListener('click', async e=>{
     const mv=legalTargets.find(t=>t.tr===br&&t.tc===bc);
     if(mv){
       const movedSide=board[sel.r][sel.c][0]==='c'?'cho':'han';
+      // Forget the evaluations beyond this position (a line abandoned by
+      // undo), and note what was actually played from it (for "추천과 다름"
+      // and the 복기). Entries AT this ply describe this board for either side
+      // to move -- after a 한수 쉼 mine is still here, and it is the "직전 값"
+      // the opponent-turn strip has just shown, so it stays.
+      const ply=gibo.length;
+      evals=evals.filter(x=>x.ply<=ply);
+      const here=findEval(ply, movedSide);
+      if(here) here.played={fr:sel.r, fc:sel.c, tr:br, tc:bc, piece:board[sel.r][sel.c][1]};
+      posGen++;
       history.push({board:JSON.parse(JSON.stringify(board)), moveCount, turn, gibo:gibo.slice()});
       // record the move into the gibo
       gibo.push({fr:sel.r, fc:sel.c, tr:br, tc:bc, captured:mv.captured, side:movedSide});
@@ -418,8 +1037,10 @@ cvs.addEventListener('click', async e=>{
 function checkMoveLimit(){
   if(moveCount>=MOVE_LIMIT){
     gameOver=true;
-    showJudge('200수에 도달하여 자동 종료되었습니다. 점수로 승부를 가립니다.');
+    const j=showJudge('200수에 도달하여 자동 종료되었습니다. 점수로 승부를 가립니다.');
     document.getElementById('status').textContent='게임 종료 (200수 도달).';
+    gameResult={win:j.winner===mySide, why:'200수 점수 판정 · '+j.margin+'점 차'};
+    renderResult('over'); openReview(); renderWinStrip(true);
   }
 }
 
@@ -434,6 +1055,7 @@ function showJudge(prefix){
   jd.innerHTML=(prefix?prefix+'<br>':'')+
     '초 '+s.cho+'점 vs 한 '+s.han.toFixed(1)+'점<br>'+
     '\u{1F3C6} '+wName+' 승 ('+margin+'점 차)';
+  return {winner, margin};
 }
 
 // Auto-analyze, but only for the player's own side. The opponent's
@@ -443,15 +1065,11 @@ function maybeAutoAnalyze(){
   if(turn!==mySide){
     const oppName = turn==='cho'?'초(파랑)':'한(빨강)';
     document.getElementById('status').textContent=oppName+' 차례입니다. (상대 차례)';
-    // Keep the result box visible (don't collapse it) so the layout below does
-    // not jump every half-move. Show a neutral placeholder at the same size.
-    const rd=document.getElementById('result');
-    rd.style.display='block';
-    rd.innerHTML='<div style="height:30px;margin-bottom:8px;display:flex;align-items:center;'+
-      'padding:0 10px;border-radius:6px;font-weight:600;font-size:13px;background:#eee;color:#777;">'+
-      '\u23F3 상대('+oppName+') 차례</div>'+
-      '<div style="color:#999;font-size:13px;">상대가 두면 다시 분석합니다.</div>';
+    // Keep the result box at the same size in every state, so the layout
+    // below does not jump every half-move.
+    renderResult('opp');
     hint=null; draw();
+    renderWinStrip();                       // my last value, greyed; no engine call
     return false;
   }
   analyze(turn, true);
@@ -460,14 +1078,7 @@ function maybeAutoAnalyze(){
 
 // Show a neutral placeholder in the result box WITHOUT hiding it, so the box
 // always occupies the same space and the layout never shakes.
-function resultPlaceholder(msg){
-  const rd=document.getElementById('result');
-  rd.style.display='block';
-  rd.innerHTML='<div style="height:30px;margin-bottom:8px;display:flex;align-items:center;'+
-    'padding:0 10px;border-radius:6px;font-weight:600;font-size:13px;background:#eee;color:#777;">'+
-    (msg||'대기 중')+'</div>'+
-    '<div style="color:#999;font-size:13px;">분석하면 추천 수가 여기에 표시됩니다.</div>';
-}
+function resultPlaceholder(msg){ renderResult('idle', {msg}); }
 
 async function analyze(sideStr, auto){
   if(gameOver)return;
@@ -475,51 +1086,48 @@ async function analyze(sideStr, auto){
   hint=null;draw();
   const t=parseFloat(document.getElementById('time').value);
   const name=sideStr==='cho'?'초(파랑)':'한(빨강)';
+  // Which request, and which position, this answer will belong to: an answer
+  // that arrives after the user has moved, undone or started again must not
+  // draw its arrow on the new position.
+  const seq=++anaSeq, gen=posGen, ply=gibo.length, onTurn=(sideStr===turn), secs=analysisSecs();
+  pending = onTurn ? {ply, side:sideStr, secs} : null;
   document.getElementById('status').textContent=(auto?(name+' 차례 — '):'')+'수읽기 중...';
-  resultPlaceholder(name+' 수읽기 중...');
-  const res=await api('/api/analyze',{board, side:sideStr, time:t,
-                                      history:gibo, cho_formation:choForm, han_formation:hanForm});
-  const rd=document.getElementById('result');
-  if(res.error){rd.style.display='block';rd.textContent='오류: '+res.error;
-    document.getElementById('status').textContent='';return;}
-  if(!res.move){rd.style.display='block';rd.innerHTML='<b>'+name+'</b> — 둘 수 있는 수가 없습니다.';
-    document.getElementById('status').textContent='';return;}
+  renderResult('busy', {name, secs});
+  renderWinStrip();
+  let res;
+  try{
+    res=await api('/api/analyze',{board, side:sideStr, time:t,
+                                  history:gibo, cho_formation:choForm, han_formation:hanForm});
+  }catch(err){ res={error:'서버에 연결하지 못했습니다.'}; }
+  if(seq!==anaSeq) return;                  // a newer request owns the page
+  pending=null;
+  if(gen!==posGen){ renderWinStrip(); return; }   // the position moved on: drop it
+  if(res.error){
+    renderResult('error', {msg:'오류: '+res.error});
+    document.getElementById('status').textContent=''; renderWinStrip(); return;
+  }
+  if(!res.move){
+    document.getElementById('status').textContent='';
+    if(res.gameOver && onTurn){             // the side to move has no move: game over
+      gameOver=true;
+      gameResult={win: sideStr!==mySide, why:'둘 수 있는 수 없음 (외통)'};
+      document.getElementById('status').textContent='게임 종료 — '+name+' 둘 수 있는 수가 없습니다.';
+      renderResult('over'); openReview(); renderWinStrip(true);
+      return;
+    }
+    renderResult('error', {msg:name+' — 둘 수 있는 수가 없습니다.'}); renderWinStrip(); return;
+  }
+  // Only the side to move's analysis is a probability for this position; one
+  // asked for the side NOT to move is shown but never recorded.
+  if(onTurn) recordEval(ply, sideStr, res);
   hint=res.move;draw();
   document.getElementById('status').textContent=(auto?(name+' 추천 수를 화살표로 표시했습니다.'):'분석 완료.');
+  renderResult('rec', {res, side:sideStr});
   const cell=board[res.move.fr][res.move.fc];
-  const kind=cell?cell[1]:'?';
-  const adv=res.score;
-  // Status banner: ALWAYS shown, in all four states (including a calm green
-  // "안정" when the engine sees no danger). Because it is always present and
-  // always the same size, it never appears/disappears and the layout cannot
-  // shake — only its colour and text change.
-  const styles={
-    critical:'background:#b71c1c;color:#fff;',
-    bad:'background:#e65100;color:#fff;',
-    warn:'background:#f9a825;color:#222;',
-    ok:'background:#e8f0e8;color:#2e5d34;'
-  };
-  const lvl=(res.danger&&res.danger.level)?res.danger.level:'ok';
-  const txt=(lvl==='ok')?'안정 — 위협 없음':(res.danger.text||'');
-  const icon=(lvl==='ok')?'\u2713':'\u26A0';
-  const dangerHtml='<div style="height:30px;margin-bottom:8px;display:flex;align-items:center;'+
-    'padding:0 10px;border-radius:6px;font-weight:600;font-size:13px;'+
-    (styles[lvl]||styles.ok)+'">'+icon+' '+txt+'</div>';
-  rd.style.display='block';
-  if(res.fromBook){
-    rd.innerHTML=dangerHtml+'<div style="font-weight:600;margin-bottom:6px;">'+name+' 추천 수 '+
-      '<span style="font-size:12px;color:#1565C0;border:1px solid #1565C0;border-radius:6px;padding:1px 6px;margin-left:4px;">정석(기보)</span></div>'+
-      '<div><b>'+FULL[kind]+'</b> : '+coord(res.move.fr,res.move.fc)+' \u2192 '+coord(res.move.tr,res.move.tc)+
-      (res.move.captured?(' <span class="cap">('+FULL[res.move.captured]+' 잡음)</span>'):'')+'</div>'+
-      '<div style="margin-top:6px;color:#666;font-size:13px;">이전 기보에서 검증된 수입니다 (계산 없이 즉시 추천).</div>';
-  } else {
-    rd.innerHTML=dangerHtml+'<div style="font-weight:600;margin-bottom:6px;">'+name+' 추천 수</div>'+
-      '<div><b>'+FULL[kind]+'</b> : '+coord(res.move.fr,res.move.fc)+' \u2192 '+coord(res.move.tr,res.move.tc)+
-      (res.move.captured?(' <span class="cap">('+FULL[res.move.captured]+' 잡음)</span>'):'')+'</div>'+
-      '<div style="margin-top:6px;color:#666;font-size:13px;">평가 '+(adv>0?'+':'')+(adv/100).toFixed(1)+
-      ' \u00b7 깊이 '+res.depthReached+' \u00b7 '+res.nodes.toLocaleString()+' 노드</div>'+
-      '<div style="margin-top:4px;color:#999;font-size:12px;">초록 화살표가 추천 수입니다.</div>';
-  }
+  // Fresh (announce, flash) only for an answer just recorded; the other
+  // side's best move is not my 추천 and the strip did not change.
+  renderWinStrip(onTurn, '추천 '+(cell?FULL[cell[1]]:'')+' '+coord(res.move.fr,res.move.fc)+'에서 '+coord(res.move.tr,res.move.tc));
+  if(document.getElementById('review').open) renderReview();
 }
 
 function startGame(){
@@ -531,6 +1139,9 @@ function startGame(){
     // so the player's own pieces appear at the bottom (6 o'clock).
     flip=(mySide==='han');
     turn='cho';gibo=[];choForm=cho;hanForm=han;
+    evals=[];gameResult=null;pending=null;posGen++;rvSel=null;
+    document.body.classList.add('playing');
+    document.getElementById('review').open=false;
     document.getElementById('setup').style.display='none';
     document.getElementById('game').style.display='';
     fitBoardSoon();
@@ -548,21 +1159,35 @@ document.getElementById('startBtn').onclick=startGame;
 document.getElementById('anaCho').onclick=()=>analyze('cho',false);
 document.getElementById('anaHan').onclick=()=>analyze('han',false);
 document.getElementById('judgeBtn').onclick=()=>showJudge('');
-document.getElementById('autoChk').onchange=e=>{autoAnalyze=e.target.checked;};
-document.getElementById('flipBtn').onclick=()=>{flip=!flip;sel=null;legalTargets=[];draw();};
+document.getElementById('autoChk').onchange=e=>{autoAnalyze=e.target.checked; renderWinStrip();};
+document.getElementById('flipBtn').onclick=()=>{flip=!flip;sel=null;legalTargets=[];draw();
+  // the review's move names are board coordinates, which follow the flip
+  if(document.getElementById('review').open) renderReview();};
 document.getElementById('undoBtn').onclick=()=>{
   if(history.length){const prev=history.pop();board=prev.board;moveCount=prev.moveCount;
     turn=prev.turn;gibo=prev.gibo;
+    // There is no redo, and replaying the same move drops them anyway: what
+    // lies beyond this ply is gone from the strip, the 복기 and the saved file.
+    evals=evals.filter(x=>x.ply<=gibo.length);
     sel=null;hint=null;gameOver=false;legalTargets=[];
-    resultPlaceholder('대기 중');
+    posGen++;pending=null;gameResult=null;
     document.getElementById('judge').style.display='none';
     document.getElementById('status').textContent=(turn==='cho'?'초':'한')+' 차례입니다.';
-    updateScoreBar();draw();}};
+    // Back to a position of mine already analysed: show it again, no engine call.
+    const cached=(turn===mySide) ? findEval(gibo.length, turn) : null;
+    if(cached && cached.res && cached.res.move){ hint=cached.res.move; renderResult('rec', {res:cached.res, side:turn}); }
+    else resultPlaceholder('대기 중');
+    updateScoreBar();draw();
+    if(document.getElementById('review').open) renderReview();}};
 document.getElementById('passBtn').onclick=()=>{
   if(gameOver) return;
+  posGen++;
   // "한수 쉼": give the turn to the other side without moving. Snapshot first
   // so it can be undone like a normal move.
   history.push({board:JSON.parse(JSON.stringify(board)), moveCount, turn, gibo:gibo.slice()});
+  // Nothing was played from this position (a move kept from a line undone
+  // here would otherwise read as "추천과 다름").
+  const here=findEval(gibo.length, turn); if(here) here.played=null;
   turn = (turn==='cho') ? 'han' : 'cho';
   sel=null;hint=null;legalTargets=[];
   resultPlaceholder('대기 중');
@@ -571,9 +1196,12 @@ document.getElementById('passBtn').onclick=()=>{
   else {
     document.getElementById('status').textContent=
       (turn==='cho'?'초(파랑)':'한(빨강)')+' 차례입니다. (한수 쉼)';
+    renderWinStrip();
   }
 };
 document.getElementById('newBtn').onclick=()=>{
+  posGen++;anaSeq++;pending=null;           // an answer still in flight lands nowhere
+  document.body.classList.remove('playing');
   document.getElementById('game').style.display='none';
   document.getElementById('setup').style.display='block';
   document.getElementById('judge').style.display='none';
@@ -585,7 +1213,14 @@ document.getElementById('saveBtn').onclick=()=>{
   const record={
     version:1, cho_formation:choForm, han_formation:hanForm,
     moves:gibo, result:null, note:'',
-    finalScore:{cho:s.cho, han:s.han}
+    finalScore:{cho:s.cho, han:s.han},
+    // Optional: the side this was played from and the analyses already made,
+    // so reopening the game draws its 복기 without asking the engine again.
+    // The loader and Gibo.from_json ignore keys they do not know, and a file
+    // without them still loads.
+    mySide,
+    evals:evals.map(e=>({ply:e.ply, side:e.side, score:e.score, book:e.book, depth:e.depth,
+                         winProb:e.winProb, mateIn:e.mateIn, best:e.best, played:e.played}))
   };
   const blob=new Blob([JSON.stringify(record,null,2)],{type:'application/json'});
   const url=URL.createObjectURL(blob);
@@ -604,12 +1239,23 @@ document.getElementById('loadFile').onchange=e=>{
       choForm=rec.cho_formation||'msm_s';hanForm=rec.han_formation||'msm_s';
       // rebuild from the starting position by replaying recorded moves
       api('/api/new',{cho:choForm,han:hanForm}).then(res=>{
+        // The side the record was played from, when it says (older files do not).
+        if(rec.mySide==='cho'||rec.mySide==='han'){ mySide=rec.mySide; document.getElementById('mySideSel').value=mySide; }
         board=res.board;history=[];sel=null;hint=null;flip=(mySide==='han');
         gameOver=false;legalTargets=[];turn='cho';gibo=[];moveCount=0;
         (rec.moves||[]).forEach(m=>{
           board[m.tr][m.tc]=board[m.fr][m.fc];board[m.fr][m.fc]=null;
           gibo.push(m);moveCount++;turn=m.side==='cho'?'han':'cho';
         });
+        // Stored evaluations, if any, so the 복기 needs no re-analysis.
+        const n=gibo.length;
+        evals=(Array.isArray(rec.evals)?rec.evals:[]).filter(x=>x && Number.isInteger(x.ply) &&
+              x.ply>=0 && x.ply<=n && (x.side==='cho'||x.side==='han') && typeof x.score==='number')
+              .map(x=>({ply:x.ply, side:x.side, score:x.score, book:!!x.book, depth:x.depth||0,
+                        winProb:x.book?null:numOrNull(x.winProb), mateIn:x.book?null:mateOrNull(x.mateIn),
+                        best:moveOrNull(x.best), played:moveOrNull(x.played), res:null}));
+        gameResult=null;pending=null;posGen++;rvSel=null;
+        document.body.classList.add('playing');
         document.getElementById('setup').style.display='none';
         document.getElementById('game').style.display='';
         fitBoardSoon();
@@ -617,6 +1263,7 @@ document.getElementById('loadFile').onchange=e=>{
         document.getElementById('judge').style.display='none';
         document.getElementById('status').textContent='기보를 불러왔습니다 ('+moveCount+'수). '+(turn==='cho'?'초':'한')+' 차례.';
         updateScoreBar();draw();
+        if(document.getElementById('review').open) renderReview();
         if(autoAnalyze && !gameOver) maybeAutoAnalyze();
       });
     }catch(err){ alert('기보 파일을 읽을 수 없습니다: '+err.message); }

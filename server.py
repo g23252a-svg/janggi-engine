@@ -5,7 +5,10 @@ Endpoints
 GET  /                 -> serves the static board UI (templates/index.html)
 POST /api/analyze      -> body: {"board": <10x9 grid>, "side": "cho"|"han",
                                    "time": <seconds>, "depth": <int>}
-                          returns the engine's best move and score.
+                          returns the engine's best move and score, plus
+                          "winProb" (the side to move's chance of winning,
+                          janggi/winprob.py) and "mateIn" (moves to a forced
+                          mate, negative when mated; null otherwise).
 POST /api/new          -> body: {"cho": <formation>, "han": <formation>}
                           returns the starting grid for the chosen formations.
 GET  /health           -> liveness probe for Railway.
@@ -29,6 +32,7 @@ from janggi.search import Engine, zobrist_hash, _HAVE_CORE
 from janggi.score import judge, SCORE_POINTS, HAN_BONUS
 from janggi.repetition import RepetitionTracker
 from janggi.book import load_book, book_move
+from janggi.winprob import MATE, win_probability, mate_in
 
 app = Flask(__name__)
 
@@ -290,6 +294,9 @@ def api_analyze():
             "danger": {"level": "ok", "text": ""},
             "depthReached": 0, "nodes": 0, "pv": [],
             "fromBook": True, "gameOver": False,
+            # A book move was not searched: its score of 0 is not an
+            # evaluation, so there is no probability to report.
+            "winProb": None, "mateIn": None,
         })
 
     engine = Engine(max_depth=depth, time_limit=time_limit)
@@ -310,7 +317,14 @@ def api_analyze():
         nodes = engine.stats.total_nodes
 
     if move is None:
-        return jsonify({"move": None, "score": score, "gameOver": True})
+        if not board.legal_moves(side):
+            # No legal move: the side to move has lost. The compiled core
+            # scores that -MATE, but the pure-Python fallback (and so the
+            # Pages build) reports 0 because it never completes a depth; say
+            # the same thing from both, so winProb/mateIn agree too.
+            score = -MATE
+        return jsonify({"move": None, "score": score, "gameOver": True,
+                        **_win_fields(score, game_ply)})
 
     # Danger warning. The search score is from the side-to-move's point of view
     # (negative = the player is losing). Surfacing this lets the player switch to
@@ -334,7 +348,16 @@ def api_analyze():
         "nodes": nodes,
         "pv": [{"fr": a, "fc": b, "tr": c, "tc": d} for a, b, c, d in pv],
         "gameOver": False,
+        **_win_fields(score, game_ply),
     })
+
+
+def _win_fields(score: int, game_ply: int) -> dict:
+    """The board UI's win-probability strip reads these, never the raw score:
+    janggi/winprob.py is the one place the score becomes a probability, and
+    web/engine_api.py adds the same two fields for the Pages build."""
+    return {"winProb": round(win_probability(score, game_ply), 4),
+            "mateIn": mate_in(score)}
 
 
 def _rebuild_with_history(cho_form, han_form, history):
