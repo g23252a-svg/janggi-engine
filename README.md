@@ -217,6 +217,15 @@ app with its own icon, no browser chrome, and a shell that opens offline.
 - Everything tappable is at least 44px. Secondary controls fold into a
   **설정 · 기보** disclosure so the board starts near the top of the screen.
 - In landscape the board moves beside the panel instead of above it.
+- Above the board, **이길 확률** shows my chance of winning at each of my
+  turns, what changed since my last turn (and whether I had played the
+  engine's move), the 점수제 points and the move count. Under the board sits
+  the recommendation, then undo/flip and the analyse buttons. **복기 · 승률
+  흐름** charts the game from my side and names its 승부처, the move after
+  which it never came back. All of it comes from the analysis the page already
+  asks for on my turn — no extra engine calls — and saved 기보 files keep it.
+  The percentage is computed by the engine (`janggi/winprob.py`, calibrated on
+  self-play; see CHANGELOG 1.4.0), so both builds show the same number.
 - Analysis still needs the engine: on the Pages build it runs in the page under
   Pyodide, and on a Flask/Railway deployment it comes from the server. Only the
   shell is cached, never a move.
@@ -265,7 +274,7 @@ python server.py            # http://localhost:8080
 | `GET /health` | liveness probe |
 | `GET /manifest.webmanifest`, `/sw.js`, `/icon-<size>.png` | home-screen install |
 | `POST /api/new` | start position for the chosen formations |
-| `POST /api/analyze` | best move, score, depth, node count and principal variation |
+| `POST /api/analyze` | best move, score, depth, node count, principal variation, and the side to move's `winProb` / `mateIn` |
 | `POST /api/legal` | legal moves for one square, repetition-aware |
 | `POST /api/repetition` | how many times the current position has occurred |
 | `POST /api/score` | official material score (점수제) |
@@ -293,6 +302,7 @@ janggi/
   see.py        static exchange evaluation
   repetition.py repetition bookkeeping over Zobrist keys
   score.py      official Janggi point scoring (점수제)
+  winprob.py    search score -> the side to move's chance of winning (the UI's 이길 확률)
   book.py       opening book built from game records
   gibo.py       game records (기보): save, load, replay, validate
   match.py      A/B match runner for measuring engine changes
@@ -314,6 +324,7 @@ tests/
   test_parity.py   perft references, Python/Cython equality, board invariants
   test_tactics.py  certified forced wins, incl. with each pruning pass disabled
   test_server.py   web API behaviour and input validation
+  test_winprob.py  the win-probability curve and the mate count
   test_web_build.py  the Pages build and its in-browser API
 ```
 

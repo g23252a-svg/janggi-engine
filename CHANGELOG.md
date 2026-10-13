@@ -3,6 +3,72 @@
 Versions before 0.4.0 predate this file; `setup.py` sat at 0.3.0 through all
 three of the patches below, which is what 1.0.0's versioning work is about.
 
+## 1.4.0 — the board shows my chance of winning, and where the game turned
+
+A user played CHO on 2026-10-13 and was mated at ply 92. The page showed a
+recommendation and a raw score at each turn, but nothing that said, at a
+glance, "you are losing now" or, afterwards, which move lost the game. This
+release adds that, designed by a review panel (three independent designs,
+critiqued and merged) and calibrated on self-play. Replayed through the new
+page with its analysis on, that game reads: even for 16 moves; the 승부처 at
+move 17 (51% → 42%, never above 50% again); the largest single drop at move
+25 (41% → 27%, where the move played was not the recommendation); and a forced
+mate against CHO on the board from move 83.
+
+What the board shows now:
+
+- **이길 확률**, a fixed 72px strip above the board: my side's chance of
+  winning as one big number with a band word (승세 ≥80, 우세 60-79, 팽팽
+  41-59, ⚠ 불리 21-40, ⚠ 위기 ≤20, the last two tinted), the change since my
+  previous analysed turn (▲/▼ in points, a filled chip and one flash for a drop
+  of 10 or more, "추천과 다름" when the move I played there was not the
+  engine's), the 점수제 points and the move count, and a bar in my colour. It
+  greys my last value while the engine thinks and on the opponent's turn
+  (saying whether I played the recommendation), shows "정석" for a book move,
+  "외통 N수" for a forced mate either way (counting the attacker's moves), and
+  승리/패배 when the game ends. It never computes anything for the opponent.
+- The recommendation box sits directly under the board at a fixed 104px
+  (danger banner, the move, one line of detail; "외통 3수 (승)" instead of
+  ±9999.9). **Undo/flip and the analyse buttons moved below it**, into the
+  thumb zone — they used to be above the board. A ring marks the last move.
+- **복기 · 승률 흐름** (opens by itself when the game ends): a chart of my
+  probability at each of my analysed turns, filled dots where I followed the
+  recommendation and hollow ones where I did not, and up to four swings of 15
+  points or more, each with the move played and the move recommended. It names
+  the **승부처**: the largest swing toward the final result that starts on the
+  other side of 50%, after which the curve never crosses back.
+- Nothing moves: the strip, the status line, the board, the result box and the
+  button rows keep the same rectangles in every state (measured at 390x844,
+  844x390 and 1280x900), and the landscape board no longer runs 40px off the
+  bottom of an 844x390 screen.
+
+**Zero extra engine calls.** Every number comes from the /api/analyze the page
+already made on my own turn. Undo back to a position of mine that was already
+analysed re-shows the stored answer instead of asking again, and an answer
+that arrives after the position changed (move, undo, pass, new game) is
+dropped instead of drawing its arrow on the wrong position. Saved 기보 files
+now carry `mySide` and the stored evaluations, so the 복기 of a reopened game
+is free; files without them load as before.
+
+**The probability is computed once, in Python.** `janggi/winprob.py` turns the
+side to move's search score into `p = 1 / (1 + exp(-k * score))` with one slope
+per phase, because the evaluation's endgame lock doubles material from ply 80
+and triples it from ply 120: k = 0.00264 before ply 80, 0.00186 to ply 119,
+0.00194 after (75% is about +416, +589 and +566). The slopes are a
+maximum-likelihood fit on 14,862 positions from 102 self-play games of the
+1.3.0 engine at 30k nodes, labelled with each game's winner; binned
+reliability is within a few points in the first two phases (worst ten-point
+bins about 8 and 10 points off) and good in the tails of the last, whose
+middle bins are thin and noisy. Re-reading the same score with the next
+phase's slope moves it by a median of 3.5 points at ply 80 and 0.3 at ply 120.
+A mate score is exactly 1 or 0, and the page shows 0% or 100% only for a
+proven mate. Both the Flask server and the in-browser engine of the Pages
+build add `winProb` (the side to move's, 4 decimals) and `mateIn` (moves to
+mate, negative when mated) to every searched /api/analyze answer — `null` for
+a book move, whose score of 0 is not an evaluation — and a test pins that the
+two return identical values. A position with no legal move now scores
+-1,000,000 from both search cores (the pure-Python one said 0).
+
 ## 1.3.0 — four fixes from a design panel over the lost games
 
 A panel of independent designers read the four lost games (2026-10-08 to

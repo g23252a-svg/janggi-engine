@@ -211,6 +211,74 @@ def test_browser_api_matches_the_server(site):
     opening = {m.as_tuple() for m in Board.standard().legal_moves(CHO)}
     move = result["move"]
     assert (move["fr"], move["fc"], move["tr"], move["tc"]) in opening
+    # The strip's number: from the shipped janggi/winprob.py, as on the server.
+    from janggi.winprob import win_probability
+    assert isinstance(result["winProb"], float)
+    assert result["winProb"] == round(win_probability(result["score"], 0), 4)
+    assert result["mateIn"] is None
+
+
+class _FixedScoreEngine:
+    score = 0
+
+    def __init__(self, *args, **kwargs):
+        import types
+        self.stats = types.SimpleNamespace(pv=[], depth_reached=5, total_nodes=99)
+
+    def search(self, board, side, **kwargs):
+        return board.legal_moves(side)[0], self.score
+
+
+def _shuffle_history(n):
+    cycle = [(9, 0, 8, 0, "cho"), (0, 0, 1, 0, "han"), (8, 0, 9, 0, "cho"), (1, 0, 0, 0, "han")]
+    return [{"fr": a, "fc": b, "tr": c, "tc": d, "captured": None, "side": side}
+            for a, b, c, d, side in (cycle[i % 4] for i in range(n))]
+
+
+def test_browser_and_server_report_the_same_win_probability(site, monkeypatch):
+    """The page shows res.winProb / res.mateIn from whichever engine answered,
+    so the Pages build and a deployment must turn the same score at the same
+    ply into the same numbers. The two searches differ in depth, so the score
+    is pinned with a stand-in engine; a forced mate and a lost position are
+    checked with the real searches, which agree on those exactly."""
+    pytest.importorskip("flask")
+    import server as srv
+
+    api = load_engine_api(str(site))
+    client = srv.app.test_client()
+
+    def both(payload):
+        from_server = client.post("/api/analyze", json=payload).get_json()
+        from_browser = api.api_analyze(json.loads(json.dumps(payload)))
+        return from_server, from_browser
+
+    for plies in (0, 40, 79, 80, 119, 120, 150):
+        for score in (-2500, -416, -37, 0, 120, 589, 3000, 999_995, -999_994):
+            monkeypatch.setattr(srv, "Engine", type("E", (_FixedScoreEngine,), {"score": score}))
+            monkeypatch.setattr(api, "Engine", type("E", (_FixedScoreEngine,), {"score": score}))
+            s, b = both({"history": _shuffle_history(plies), "cho_formation": "msm_s",
+                         "han_formation": "msm_s", "side": "cho" if plies % 2 == 0 else "han",
+                         "time": 0.5})
+            assert (s["score"], s["winProb"], s["mateIn"]) == (b["score"], b["winProb"], b["mateIn"]), (plies, score)
+            assert type(s["winProb"]) is type(b["winProb"]) is float
+    monkeypatch.undo()
+
+    mate1 = Board()
+    mate1.grid[0][4] = ("K", HAN)
+    mate1.grid[9][3] = ("K", CHO)
+    mate1.grid[5][0] = ("C", CHO)
+    mate1.grid[1][8] = ("C", CHO)
+    mate1.grid[9][5] = ("C", CHO)
+    mated = Board()
+    mated.grid[0][4] = ("K", HAN)
+    mated.grid[9][3] = ("K", CHO)
+    mated.grid[0][0] = ("C", CHO)
+    mated.grid[9][4] = ("C", CHO)
+    mated.grid[9][5] = ("C", CHO)
+    for board, side, expected in ((mate1, "cho", (1.0, 1)), (mated, "han", (0.0, -1))):
+        grid = srv.grid_to_json(board)
+        s, b = both({"board": grid, "side": side, "time": 1.0})
+        assert (s["winProb"], s["mateIn"]) == (b["winProb"], b["mateIn"]) == expected
 
 
 def test_browser_api_reports_bad_input_as_an_error_not_a_crash(site):
