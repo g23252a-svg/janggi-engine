@@ -85,22 +85,32 @@
             letter-spacing:-0.5px; white-space:nowrap; font-variant-numeric:tabular-nums; }
   .wp-big small { font-size:.55em; font-weight:700; margin-left:1px; }
   .wp-big.words { font-size:24px; letter-spacing:-0.3px; }
-  .wp-lab { flex:1 1 auto; min-width:0; font-size:12px; line-height:1.4; color:var(--sub);
+  /* A caption too long for its line is shrunk to fit (fitText, down to 10px)
+     before it is ellipsized, so the sizes inside are relative and the line
+     height is not: a shrunk line stays where it was. */
+  .wp-lab { flex:1 1 auto; min-width:0; font-size:12px; line-height:16.8px; color:var(--sub);
             white-space:nowrap; }
   .wp-lab > div { overflow:hidden; text-overflow:ellipsis; }
-  .wp-lab b { font-size:15px; color:var(--ink); }
-  .wp-d { font-weight:800; font-size:13px; font-variant-numeric:tabular-nums; }
+  .wp-lab b { font-size:1.25em; color:var(--ink); }
+  .wp-d { font-weight:800; font-size:1.0833em; font-variant-numeric:tabular-nums; }
   .wp-d.up { color:var(--up); } .wp-d.down { color:var(--down); } .wp-d.flat { color:#555; }
   .wp-d.plunge { color:#fff; background:var(--down); border-radius:4px; padding:0 4px; }
   .wp-pts { flex:0 0 auto; text-align:right; font-size:12px; line-height:1.4; color:var(--sub);
             white-space:nowrap; font-variant-numeric:tabular-nums; }
   .wp-pts b { font-weight:700; }
   .wp-pts b.cho { color:var(--cho); } .wp-pts b.han { color:var(--han); }
-  /* 320px phones: drop the "· 내(초) 이길 확률" tail and the points line (the
-     ply count stays) so the change chip keeps its caption. */
+  /* The container is the strip's content box: viewport - 52px in portrait.
+     Under 330 (360/375px phones, phone landscape) drop the "· 내(초) 이길
+     확률" tail and shrink the big number; the points stay. */
   @container (max-width: 330px) {
-    .wp .who, .wp .pts { display:none; } .wp-row { gap:8px; }
+    .wp .who { display:none; } .wp-row { gap:8px; }
     .wp-big { font-size:28px; min-width:2em; } .wp-big.words { font-size:21px; } }
+  /* Under 290 (320px phones): the points line goes too (the ply count stays)
+     so the change chip keeps its caption. */
+  @container (max-width: 290px) { .wp .pts { display:none; } }
+  /* Under 240 (the landscape column of a 568x320 phone): the ply count too;
+     the caption is what says why. */
+  @container (max-width: 240px) { .wp .wp-pts { display:none; } }
   .wp-track { position:relative; height:12px; margin-top:8px; }
   .wp-bar { display:flex; gap:2px; height:100%; border-radius:6px; overflow:hidden; }
   /* Mine: solid, from the left, always; theirs: a light step of their own
@@ -120,6 +130,7 @@
   .wp.caution .wp-lab b { color:#7A4A00; }
   .wp.alert { --wp-bg:#FFE4D3; border-color:#C2410C; }
   .wp.alert .wp-lab b { color:#9A3412; }
+  .wp.alert .wp-pts b.han { color:#A93226; }   /* #C0392B is 4.48:1 on this background */
   .wp.matewin, .wp.won { --wp-bg:#E3F2FD; border-color:var(--mine); --sub:#333; }
   .wp.side-han.matewin, .wp.side-han.won { --wp-bg:#FBE9E7; }
   .wp.matewin .wp-big, .wp.matewin .wp-lab b, .wp.won .wp-big, .wp.won .wp-lab b { color:var(--mine-ink); }
@@ -163,10 +174,17 @@
   .rec-tag.book { background:transparent; color:var(--cho); box-shadow: inset 0 0 0 1px var(--cho); }
   .rec-tag.key { background:var(--down); }
   .rec-tag.keyup { background:var(--up); }
+  /* Too long for the row (a narrow phone, the landscape column): shrunk to fit
+     by fitText, down to 11px, and only then ellipsized. */
   .rec .txt { overflow:hidden; text-overflow:ellipsis; }
   .rec.placeholder { font-size:13px; color:var(--muted); }
-  .meta { height:18px; margin-top:2px; font-size:12px; color:var(--muted); white-space:nowrap;
+  .meta { height:18px; line-height:18px; margin-top:2px; font-size:12px; color:var(--muted); white-space:nowrap;
           overflow:hidden; text-overflow:ellipsis; }
+  /* An error takes the recommendation and detail rows (the same 54px): the
+     whole message, wrapped, three lines at a time, scrollable, scrolled to its
+     last line -- the one that says what went wrong. */
+  .rec.err { display:block; height:46px; white-space:pre-wrap; overflow-wrap:anywhere;
+             overflow-y:auto; overscroll-behavior:contain; font-size:13px; line-height:15.3px; color:#4f4a40; }
 
   #judge { margin-top:8px; padding:14px; border-radius:8px; font-size:15px; display:none;
            text-align:center; font-weight:600; }
@@ -401,6 +419,7 @@ function fitBoard(){
   cvs.height=Math.round(h*dpr);
   boardScale=(w*dpr)/BW;
   if(board) draw();
+  fitRows();                                // the column width may have changed too
 }
 
 // Measuring in the frame that unhid the board reads a layout that has not
@@ -508,6 +527,17 @@ function analysisSecs(){
   return t<=1.5 ? 1.2 : t<=3 ? 2.5 : Math.min(t,6)-0.5;
 }
 const SIDE_KO={cho:'초', han:'한'};
+// The change chip's flat band: a change under this many points reads "지난
+// 차례와 비슷", and a swing that small is never named the 승부처 either.
+const FLAT=3;
+// janggi/evaluate.py's endgame lock adds the material sum to the score again
+// from ply 80 (x2) and ply 120 (x3); they are also the phase starts of
+// janggi/winprob.PHASE_SLOPES. The probability steps there on its own (on
+// self-play a median of ~4 points between my turns either side of the step,
+// against ~1.3 elsewhere, and mostly away from 50%), so a change across one
+// is labelled as the scale changing, never blamed on the move.
+const LOCK_PLIES=[80,120];
+function lockBetween(a, b){ let L=0; for(const x of LOCK_PLIES) if(a<x && b>=x) L=x; return L; }
 
 // One entry per analysed position of the current line, keyed by (ply, side):
 // ply = gibo.length (the game_ply the server used), side = the side searched,
@@ -523,6 +553,15 @@ let gameResult=null; // {win, why} once the game has ended
 
 function numOrNull(x){ return (typeof x==='number' && isFinite(x) && x>=0 && x<=1) ? x : null; }
 function mateOrNull(x){ return (Number.isInteger(x) && x!==0) ? x : null; }
+// A move read from a loaded file, or null. The file is untrusted and these
+// fields are later written into the page (the 복기 rows, the opponent-turn
+// line), so anything that is not a square on the board is dropped.
+function moveOrNull(m){
+  const sq=(v,n)=>Number.isInteger(v) && v>=0 && v<n;
+  if(!m || typeof m!=='object' || !sq(m.fr,ROWS) || !sq(m.fc,COLS) || !sq(m.tr,ROWS) || !sq(m.tc,COLS)) return null;
+  return {fr:m.fr, fc:m.fc, tr:m.tr, tc:m.tc,
+          piece: Object.prototype.hasOwnProperty.call(FULL, m.piece) ? m.piece : '?'};
+}
 function findEval(ply, side){
   for(const e of evals) if(e.ply===ply && e.side===side) return e;
   return null;
@@ -578,28 +617,35 @@ function wpModel(){
       return m.win
         ? {tone:'matewin', big:'외통 '+m.n+'수', words:true, l1:'✓ <b>이기는 수순</b>',
            l2:'추천 수대로 두세요', fill:100, say:'외통 '+m.n+'수, 이기는 수순'}
-        : {tone:'matelose', big:'외통 '+m.n+'수', words:true, l1:'⚠ <b>상대의 외통 수순</b>',
+        : {tone:'matelose', big:'외통 '+m.n+'수', words:true, l1:'⚠ <b>상대 외통 수순</b>',
            l2:'궁 수비 최우선', fill:0, plunge:true, say:'상대 외통 '+m.n+'수, 궁 수비 최우선'};
     }
     const v=pct(pMy(cur)), band=bandOf(v);
-    let l2='첫 분석', d=null, plunge=false;
+    let l2='첫 분석', d=null, plunge=false, sayD='';
     if(cur.side!==mySide) l2='상대 차례 국면 (수동 분석)';
     else {
       const prev=prevMine(ply);
       if(prev){
         d=v-vOf(prev);
-        const why=(d<=-5 && deviated(prev)) ? '추천과 다름' : '지난 차례보다';
-        if(d>=3) l2='<span class="wp-d up">▲'+d+'%p</span> '+why;
-        else if(d<=-3){ plunge=d<=-10;
-          l2='<span class="wp-d '+(plunge?'plunge':'down')+'">▼'+(-d)+'%p</span> '+why; }
-        else l2='<span class="wp-d flat">＝</span> 지난 차례와 비슷';
+        const lock=lockBetween(prev.ply, ply);
+        const amt=(d>0 ? d+' 올라감' : (-d)+' 내려감');
+        if(Math.abs(d)<FLAT){ l2='<span class="wp-d flat">＝</span> 지난 차례와 비슷'; sayD=', 지난 차례와 비슷'; }
+        else if(lock){
+          // The scale changed between the two readings: no plunge, no blame.
+          l2='<span class="wp-d '+(d>0?'up':'down')+'">'+(d>0?'▲'+d:'▼'+(-d))+'%p</span> '+lock+'수 평가 기준 변경';
+          sayD=', '+lock+'수부터 평가 기준이 바뀌어 '+amt;
+        } else {
+          const why=(d<=-5 && deviated(prev)) ? '추천과 다름' : '지난 차례보다';
+          if(d>0) l2='<span class="wp-d up">▲'+d+'%p</span> '+why;
+          else { plunge=d<=-10;
+            l2='<span class="wp-d '+(plunge?'plunge':'down')+'">▼'+(-d)+'%p</span> '+why; }
+          sayD=', 지난 차례보다 '+amt;
+        }
       }
     }
     return {tone:band.tone, big:v+'<small>%</small>',
       l1:(band.tone==='calm'?'':'⚠ ')+'<b>'+band.word+'</b><span class="who"> · 내('+me+') 이길 확률</span>',
-      l2, fill:v, plunge,
-      say:'이길 확률 '+v+'퍼센트, '+band.word+(d==null ? '' : Math.abs(d)<3 ? ', 지난 차례와 비슷'
-                                          : ', 지난 차례보다 '+(d>0 ? d+' 올라감' : (-d)+' 내려감'))};
+      l2, fill:v, plunge, say:'이길 확률 '+v+'퍼센트, '+band.word+sayD};
   }
   // Nothing computed for THIS position: show my last value, greyed.
   const last=prevMine(ply+1);
@@ -639,6 +685,7 @@ function wpPaint(el, vm){
   meter.setAttribute('aria-valuenow', String(Math.round(vm.fill)));
   meter.setAttribute('aria-valuetext', vm.say ||
     (el.querySelector('#wpL1').textContent+', '+el.querySelector('#wpL2').textContent));
+  fitText(el.querySelector('#wpL1'), 10); fitText(el.querySelector('#wpL2'), 10);
   return vm;
 }
 // fresh=true only when a new engine answer was just recorded: the one moment a
@@ -654,6 +701,31 @@ function renderWinStrip(fresh, extraSay){
 
 // The score bar's three numbers (points and the move count) now live in the strip.
 function updateScoreBar(){ renderWinStrip(); }
+
+// The strip's captions and the result box's rows are one fixed-height line
+// each, so a line too long for its width (a 320px phone, the landscape
+// column, a large system font) is shrunk to fit, down to `min` px, before the
+// ellipsis takes anything: the end of a line is often the part that matters
+// (the destination square, the 승부처's percentages).
+function overflows(el){
+  if(el.scrollWidth>el.clientWidth) return true;
+  // scrollWidth is rounded: text 0.3px too wide reads as fitting, and gets
+  // an ellipsis all the same. The text's own extent is not rounded.
+  const r=document.createRange(); r.selectNodeContents(el);
+  return r.getBoundingClientRect().width>el.getBoundingClientRect().width+0.01;
+}
+function fitText(el, min){
+  if(!el) return;
+  el.style.fontSize='';
+  if(!overflows(el)) return;                // fits, or not laid out (hidden)
+  let fs=parseFloat(getComputedStyle(el).fontSize);
+  while(fs>min && overflows(el)){ fs=Math.max(min, fs-0.5); el.style.fontSize=fs+'px'; }
+}
+function fitRows(){
+  fitText(document.getElementById('wpL1'), 10); fitText(document.getElementById('wpL2'), 10);
+  document.querySelectorAll('#result .rec .txt').forEach(e=>fitText(e, 11));
+  fitText(document.querySelector('#result .meta'), 10);
+}
 
 // Result box: three fixed rows -- banner, recommendation, one line of detail.
 const DANGER_CLASS={ok:'bn-ok', warn:'bn-warn', bad:'bn-bad', critical:'bn-critical'};
@@ -674,7 +746,7 @@ function renderResult(kind, d){
   d=d||{};
   const rd=document.getElementById('result');
   const banner=(cls, html, extra)=>'<div class="banner '+cls+'">'+html+(extra||'')+'</div>';
-  const ph=t=>'<div class="rec placeholder">'+t+'</div>';
+  const ph=t=>'<div class="rec placeholder"><span class="txt">'+t+'</span></div>';
   let bn, rec, meta='';
   if(kind==='opp'){
     const oppName=turn==='cho'?'초(파랑)':'한(빨강)';
@@ -708,16 +780,25 @@ function renderResult(kind, d){
     meta = trailPoints().length>1 ? '아래 ‘복기 · 승률 흐름’에서 수마다 볼 수 있습니다.'
                                   : '자동 분석을 켜고 두면 내 차례마다 기록됩니다.';
   } else if(kind==='error'){
-    bn=banner('bn-idle', '오류');
-    rec='<div class="rec placeholder" title="'+String(d.msg).replace(/"/g,'&quot;')+'">'+d.msg+'</div>';
+    // As text, never markup (a Python traceback says "<module>"), and all of
+    // it: the box shows the end, where the reason is, and scrolls back up.
+    rd.innerHTML=banner('bn-idle', '오류')+'<div class="rec err"></div>';
+    const box=rd.querySelector('.err');
+    box.textContent=String(d.msg);
+    box.scrollTop=box.scrollHeight;
+    return;
   } else {
     bn=banner('bn-idle', d.msg||'대기 중');
     rec=ph('분석하면 추천 수가 여기에 표시됩니다.');
   }
   rd.innerHTML=bn+rec+'<div class="meta">'+meta+'</div>';
+  rd.querySelectorAll('.rec .txt').forEach(e=>fitText(e, 11));
+  fitText(rd.querySelector('.meta'), 10);
 }
 
 // ---- 복기: my win % at each of my analysed turns --------------------------
+// evals only ever holds the current line: a move or an undo drops what lies
+// beyond it (a pass adds no ply and drops nothing).
 function trailPoints(){
   return evals.filter(e=>e.side===mySide && hasP(e)).sort((a,b)=>a.ply-b.ply)
     .map(e=>({e, ply:e.ply, v:vOf(e), mate:mateOf(e), dev:deviated(e)}));
@@ -729,14 +810,17 @@ function swingsOf(pts){
 }
 // 승부처: the biggest swing toward the final result after which the curve
 // never crossed back over 50%. Mid-game it uses the side the curve is on now.
+// A swing inside the flat band (50 -> 52) is not one: the strip itself called
+// it "지난 차례와 비슷".
 function keySwing(){
   const pts=trailPoints(); if(pts.length<2) return null;
   const losing = gameResult ? !gameResult.win : pts[pts.length-1].v<50;
   let best=null;
   for(const s of swingsOf(pts)){
     const after=pts.slice(s.i);
-    const ok = losing ? (s.d<0 && s.from.v>=50 && after.every(p=>p.v<50))
-                      : (s.d>0 && s.from.v<=50 && after.every(p=>p.v>50));
+    const ok = Math.abs(s.d)>=FLAT &&
+               (losing ? (s.d<0 && s.from.v>=50 && after.every(p=>p.v<50))
+                       : (s.d>0 && s.from.v<=50 && after.every(p=>p.v>50)));
     if(ok && (!best || Math.abs(s.d)>Math.abs(best.d))) best=s;
   }
   return best;
@@ -793,11 +877,12 @@ function renderReview(){
   const sw=swingsOf(pts).filter(x=>Math.abs(x.d)>=15).sort((a,b)=>Math.abs(b.d)-Math.abs(a.d));
   if(key){ const i=sw.findIndex(x=>x.i===key.i); if(i>0) sw.unshift(sw.splice(i,1)[0]); }
   const rows=sw.slice(0,4).map(x=>{
-    const f=x.from.e, up=x.d>0, isKey=key && key.i===x.i;
+    const f=x.from.e, up=x.d>0, isKey=key && key.i===x.i, lock=lockBetween(x.from.ply, x.to.ply);
+    const known=!!(f.played && f.best);
     let why='';
-    if(f.played && f.best) why = deviated(f)
-      ? '둔 수 '+moveText(f.played, f.played.piece)+' · 추천 '+moveText(f.best, f.best.piece)
-      : '추천대로 둠 — '+(up?'상대 실수':'상대의 좋은 응수');
+    if(known && deviated(f)) why='둔 수 '+moveText(f.played, f.played.piece)+' · 추천 '+moveText(f.best, f.best.piece);
+    else if(lock) why=(known?'추천대로 둠 — ':'')+lock+'수 평가 기준 변경';
+    else if(known) why='추천대로 둠 — '+(up?'상대 실수':'상대의 좋은 응수');
     return '<li><button type="button" data-i="'+x.i+'" class="'+(isKey?(up?'keyup':'key'):'')+'" aria-pressed="false">'+
       '<span class="d '+(up?'up':'down')+'">'+(up?'▲':'▼')+Math.abs(x.d)+'%p</span>'+
       '<span class="t">'+(x.from.ply+1)+'수째 내 수 이후 · '+x.from.v+'% → '+x.to.v+'%'+
@@ -889,10 +974,13 @@ cvs.addEventListener('click', async e=>{
     const mv=legalTargets.find(t=>t.tr===br&&t.tc===bc);
     if(mv){
       const movedSide=board[sel.r][sel.c][0]==='c'?'cho':'han';
-      // Forget the evaluations of a line abandoned by undo, and note what was
-      // actually played from this position (for "추천과 다름" and the 복기).
+      // Forget the evaluations beyond this position (a line abandoned by
+      // undo), and note what was actually played from it (for "추천과 다름"
+      // and the 복기). Entries AT this ply describe this board for either side
+      // to move -- after a 한수 쉼 mine is still here, and it is the "직전 값"
+      // the opponent-turn strip has just shown, so it stays.
       const ply=gibo.length;
-      evals=evals.filter(x=>x.ply<ply || (x.ply===ply && x.side===movedSide));
+      evals=evals.filter(x=>x.ply<=ply);
       const here=findEval(ply, movedSide);
       if(here) here.played={fr:sel.r, fc:sel.c, tr:br, tc:bc, piece:board[sel.r][sel.c][1]};
       posGen++;
@@ -1036,7 +1124,9 @@ async function analyze(sideStr, auto){
   document.getElementById('status').textContent=(auto?(name+' 추천 수를 화살표로 표시했습니다.'):'분석 완료.');
   renderResult('rec', {res, side:sideStr});
   const cell=board[res.move.fr][res.move.fc];
-  renderWinStrip(true, '추천 '+(cell?FULL[cell[1]]:'')+' '+coord(res.move.fr,res.move.fc)+'에서 '+coord(res.move.tr,res.move.tc));
+  // Fresh (announce, flash) only for an answer just recorded; the other
+  // side's best move is not my 추천 and the strip did not change.
+  renderWinStrip(onTurn, '추천 '+(cell?FULL[cell[1]]:'')+' '+coord(res.move.fr,res.move.fc)+'에서 '+coord(res.move.tr,res.move.tc));
   if(document.getElementById('review').open) renderReview();
 }
 
@@ -1076,6 +1166,9 @@ document.getElementById('flipBtn').onclick=()=>{flip=!flip;sel=null;legalTargets
 document.getElementById('undoBtn').onclick=()=>{
   if(history.length){const prev=history.pop();board=prev.board;moveCount=prev.moveCount;
     turn=prev.turn;gibo=prev.gibo;
+    // There is no redo, and replaying the same move drops them anyway: what
+    // lies beyond this ply is gone from the strip, the 복기 and the saved file.
+    evals=evals.filter(x=>x.ply<=gibo.length);
     sel=null;hint=null;gameOver=false;legalTargets=[];
     posGen++;pending=null;gameResult=null;
     document.getElementById('judge').style.display='none';
@@ -1092,6 +1185,9 @@ document.getElementById('passBtn').onclick=()=>{
   // "한수 쉼": give the turn to the other side without moving. Snapshot first
   // so it can be undone like a normal move.
   history.push({board:JSON.parse(JSON.stringify(board)), moveCount, turn, gibo:gibo.slice()});
+  // Nothing was played from this position (a move kept from a line undone
+  // here would otherwise read as "추천과 다름").
+  const here=findEval(gibo.length, turn); if(here) here.played=null;
   turn = (turn==='cho') ? 'han' : 'cho';
   sel=null;hint=null;legalTargets=[];
   resultPlaceholder('대기 중');
@@ -1157,7 +1253,7 @@ document.getElementById('loadFile').onchange=e=>{
               x.ply>=0 && x.ply<=n && (x.side==='cho'||x.side==='han') && typeof x.score==='number')
               .map(x=>({ply:x.ply, side:x.side, score:x.score, book:!!x.book, depth:x.depth||0,
                         winProb:x.book?null:numOrNull(x.winProb), mateIn:x.book?null:mateOrNull(x.mateIn),
-                        best:x.best||null, played:x.played||null, res:null}));
+                        best:moveOrNull(x.best), played:moveOrNull(x.played), res:null}));
         gameResult=null;pending=null;posGen++;rvSel=null;
         document.body.classList.add('playing');
         document.getElementById('setup').style.display='none';

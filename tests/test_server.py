@@ -354,6 +354,25 @@ def test_the_page_has_the_win_probability_strip_and_review(client):
     assert "{{" not in html and "{%" not in html
 
 
+def test_the_page_knows_where_the_score_scale_steps(client):
+    """A change across ply 80 or 120 is labelled as the evaluation lock, not
+    blamed on the move; the page's plies must be winprob's phase starts."""
+    from janggi.winprob import PHASE_SLOPES
+    html = client.get("/").get_data(as_text=True)
+    found = re.search(r"const LOCK_PLIES=\[([0-9, ]+)\];", html)
+    assert found, "LOCK_PLIES is gone from the page"
+    assert [int(x) for x in found.group(1).split(",")] == [s for s, _ in PHASE_SLOPES[1:]]
+
+
+def test_the_page_treats_a_loaded_file_and_an_error_as_text(client):
+    """A gibo file is passed between players and its stored moves end up in
+    the 복기; an engine error can be a traceback with "<module>" in it."""
+    html = client.get("/").get_data(as_text=True)
+    assert "best:moveOrNull(x.best), played:moveOrNull(x.played)" in html
+    assert "x.best||null" not in html and "x.played||null" not in html
+    assert "box.textContent=String(d.msg)" in html
+
+
 def test_a_saved_gibo_with_stored_evaluations_is_still_a_gibo(client):
     """The page now saves the side it played and its evaluations with the
     moves; Gibo.from_json (and so /api/gibo/validate) must take such a file

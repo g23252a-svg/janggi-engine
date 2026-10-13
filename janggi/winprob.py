@@ -47,9 +47,19 @@ the tails are good (0-10 % and 90-100 % within a point, and most positions are
 there) but the middle bins hold only 60-150 positions each and are far noisier,
 so a late-game 40-60 % reads as "unclear" more than as a precise number.
 
-The k switch is continuous enough in practice: for real scores at plies 78-81
-and 118-121 of those games, re-reading the same score with the other phase's
-slope moves p by a median of 3.5 and 0.3 points.
+p is NOT continuous across the phase starts, and no choice of k makes it so:
+at ply 80 and 120 the search score itself jumps, because the lock adds the
+material sum again. On those games, between one side's consecutive turns, p
+moves by a median of about 4 points across 78->80 and 118->120, against 1.3
+(just before 80) and 0.2 (just before 120) elsewhere; it moves away from 50 %
+in 84 % and 93 % of games, and by 10 points or more in about one game in ten
+at ply 80 and one in six at ply 120. Re-fitting on the score with the lock's
+extra material taken out fits the outcomes worse in both later phases and
+steps just the same. So the step stays here, and the board UI labels a change
+across ply 80 or 120 as the scale changing ("80수 평가 기준 변경", its
+LOCK_PLIES) instead of reading it as the effect of the move. (Re-reading one
+score with the other phase's slope, which is a different question, moves p by
+a median of 3.5 and 0.3 points.)
 
 Mate scores are not on the curve at all: the search reports a forced mate as
 ``MATE - plies`` (or its negation), and those map to exactly 1.0 or 0.0. The UI

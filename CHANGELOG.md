@@ -36,11 +36,15 @@ What the board shows now:
   recommendation and hollow ones where I did not, and up to four swings of 15
   points or more, each with the move played and the move recommended. It names
   the **승부처**: the largest swing toward the final result that starts on the
-  other side of 50%, after which the curve never crosses back.
+  other side of 50%, after which the curve never crosses back (a swing under
+  3 points is never it).
 - Nothing moves: the strip, the status line, the board, the result box and the
-  button rows keep the same rectangles in every state (measured at 390x844,
-  844x390 and 1280x900), and the landscape board no longer runs 40px off the
-  bottom of an 844x390 screen.
+  button rows keep the same rectangles in every state (measured at 320x568,
+  360x740, 375x667, 390x844, 640x360, 667x375, 844x390 and 1280x900), and the
+  landscape board no longer runs 40px off the bottom of an 844x390 screen. A
+  line too long for a narrow screen is shrunk to fit before anything is cut
+  off, and the points stay on 360/375px phones (only a 320px phone drops
+  them).
 
 **Zero extra engine calls.** Every number comes from the /api/analyze the page
 already made on my own turn. Undo back to a position of mine that was already
@@ -48,7 +52,8 @@ analysed re-shows the stored answer instead of asking again, and an answer
 that arrives after the position changed (move, undo, pass, new game) is
 dropped instead of drawing its arrow on the wrong position. Saved 기보 files
 now carry `mySide` and the stored evaluations, so the 복기 of a reopened game
-is free; files without them load as before.
+is free; files without them load as before, and a stored move that is not a
+square on the board is dropped on load (the file is someone else's input).
 
 **The probability is computed once, in Python.** `janggi/winprob.py` turns the
 side to move's search score into `p = 1 / (1 + exp(-k * score))` with one slope
@@ -59,8 +64,12 @@ maximum-likelihood fit on 14,862 positions from 102 self-play games of the
 1.3.0 engine at 30k nodes, labelled with each game's winner; binned
 reliability is within a few points in the first two phases (worst ten-point
 bins about 8 and 10 points off) and good in the tails of the last, whose
-middle bins are thin and noisy. Re-reading the same score with the next
-phase's slope moves it by a median of 3.5 points at ply 80 and 0.3 at ply 120.
+middle bins are thin and noisy. The probability is not continuous at ply 80
+and 120: the score itself jumps there (the lock adds the material sum again),
+so between my turns either side of the step it moves by a median of about 4
+points, mostly away from 50%, and by 10 or more in about one game in ten at
+ply 80 and one in six at 120. The strip says so ("▼4%p 80수 평가 기준 변경",
+no plunge flash, no "추천과 다름") rather than blaming the move.
 A mate score is exactly 1 or 0, and the page shows 0% or 100% only for a
 proven mate. Both the Flask server and the in-browser engine of the Pages
 build add `winProb` (the side to move's, 4 decimals) and `mateIn` (moves to
