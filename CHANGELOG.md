@@ -75,8 +75,9 @@ proven mate. Both the Flask server and the in-browser engine of the Pages
 build add `winProb` (the side to move's, 4 decimals) and `mateIn` (moves to
 mate, negative when mated) to every searched /api/analyze answer — `null` for
 a book move, whose score of 0 is not an evaluation — and a test pins that the
-two return identical values. A position with no legal move now scores
--1,000,000 from both search cores (the pure-Python one said 0).
+two return identical values. /api/analyze now reports a position with no
+legal move as -1,000,000 on both builds (the search itself is unchanged; the
+pure-Python one never completes a depth there and used to report 0).
 
 ## 1.3.0 — four fixes from a design panel over the lost games
 
