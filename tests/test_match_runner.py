@@ -124,6 +124,24 @@ def test_resume_refuses_a_log_from_a_different_match(tmp_path, capsys):
                         log_path=str(log), resume=True)
 
 
+def test_resume_keeps_candidate_tables_apart(tmp_path, capsys):
+    """--table2 games are logged with the candidate's hash; resuming with
+    another candidate (or none) must refuse, not count them as this match's."""
+    log = tmp_path / "m.jsonl"
+    rec = {"seed": 7, "a_is_cho": True, "winner": "cho", "plies": 1, "reason": "mate",
+           "a": "", "b": "lmr=0", "budget": {"nodes": 300, "time": None, "depth": 3},
+           "table2": "aaaaaaaaaaaaaaaa"}
+    log.write_text(json.dumps(rec) + "\n")
+    for other in (None, "bbbbbbbbbbbbbbbb"):
+        with pytest.raises(SystemExit, match="different match"):
+            match.run_match(tiny(), tiny("lmr=0"), games=2, seed=7, opening_plies=4,
+                            log_path=str(log), resume=True, table2=other)
+    rec2 = dict(rec, table2="bbbbbbbbbbbbbbbb", seed=8)
+    log.write_text(json.dumps(rec) + "\n" + json.dumps(rec2) + "\n")
+    match.pool_logs([str(log)])
+    assert "different configurations" in capsys.readouterr().out
+
+
 def test_a_truncated_last_line_is_skipped_not_fatal(tmp_path, capsys):
     log = tmp_path / "m.jsonl"
     good = json.dumps({"seed": 7, "a_is_cho": True, "winner": "cho", "plies": 1, "reason": "mate", "a": "", "b": "x=0"})
