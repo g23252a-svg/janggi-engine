@@ -58,7 +58,7 @@ against live human opponents on online services.
   lives in a table; the default table, plus a piece-square table, a tempo
   bonus and per-type mobility, was fitted to Fairy-Stockfish's scores of about
   100,000 quiet positions (`tools/evaltune/`, `janggi/eval_weights.py`).
-  Against the hand-set weights it scores 80% at 60k and 88% at 300k nodes per
+  Against the hand-set weights it scores 77% at 60k and 90% at 300k nodes per
   move; `evalw=0` brings the hand-set evaluator back, node for node.
 - **Opening book** built from recorded games (기보) — present but **off by
   default**, because the one in the repository was measured to cost about 138
@@ -186,7 +186,7 @@ What that measurement currently says, at an equal 60k nodes per move:
 
 | technique | score with it on | verdict |
 | --- | ---: | --- |
-| evaluator weights fitted to Fairy-Stockfish (`evalw=0` turns them off, 1.5.0, ships) | **80.0% of 60 at 60k, 88.3% of 60 at 300k** (shipped weights before the endgame-lock fix; release build in CHANGELOG) | the largest measured gain in this repository; see CHANGELOG |
+| evaluator weights fitted to Fairy-Stockfish (`evalw=0` turns them off, 1.5.0, ships) | **+46 =0 -14, 76.7% of 60 at 60k; +54 =0 -6, 90.0% of 60 at 300k (+382 elo, pairs CI 82.7..97.3)**, using 6-8% fewer nodes per move | the largest measured gain in this repository; against Fairy-Stockfish at 100k it lifts our 300k engine from 2 of 10 to 6 of 10; see CHANGELOG |
 | the Janggi-aware evaluator (`eval=1` turns it off) | 75.0% of 80 | clearly better, +191 elo |
 | history-scaled late move reductions (`histlmr`) | 72.5% of 40 | clearly better, +168 elo |
 | futility + late-move pruning | 65.0% of 40 | clearly better |

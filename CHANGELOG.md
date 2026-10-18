@@ -69,8 +69,8 @@ piece values, which rank some trades differently.
 | re-weighting + piece-square table, 60k | +46 =0 -14, 76.7%, +207 elo (pairs CI 66.4..86.9) |
 | + tempo and per-type mobility (shipped weights), 60k | +48 =0 -12, 80.0%, +241 elo (pairs CI 71.1..88.9) |
 | + tempo and per-type mobility (shipped weights), 300k | +53 =0 -7, 88.3%, +352 elo (pairs CI 80.6..96.0) |
-| **the release build (with the hand-set-material lock), 60k** | **FINAL60** |
-| **the release build (with the hand-set-material lock), 300k** | **FINAL300** |
+| **the release build (with the hand-set-material lock), 60k** | **+46 =0 -14, 76.7%, +207 elo (pairs CI 64.5..88.9)** |
+| **the release build (with the hand-set-material lock), 300k** | **+54 =0 -6, 90.0%, +382 elo (pairs CI 82.7..97.3)** |
 | against Fairy-Stockfish at 100k nodes, ours at 300k, same 10 openings | 1.4.0 +2 =0 -8 (20%); shipped weights +6 =0 -4 (60%) |
 
 The tuned evaluator costs about 2% in nodes per second, and it uses fewer
