@@ -34,12 +34,13 @@ Run everything from the repository root with the compiled extensions built.
        python tools/evaltune/tune.py data.npz result.json --pst
 
    `result.json["pst"]` holds the scalars (`w`, the EW layout of
-   `janggi/_core.pyx`, tempo in slot 45) and the 720-entry piece-square table.
-   Write them into `janggi/eval_weights.py`, or load them into the candidate
-   table for an A/B match without editing anything:
+   `janggi/_core.pyx`, tempo in slot 45) and the 720-entry piece-square table
+   (`["scalars"]` the fit without it). Write them into
+   `janggi/eval_weights.py`, or play them against the shipped table without
+   editing anything -- the match loads them into the candidate table 2:
 
-       import janggi._core as core
-       core.core_set_eval_table(2, w, pst)     # then --a "evalw=2" --b "evalw=1"
+       python -m janggi.match --table2 result.json --a "evalw=2" --b "" \
+           --games 20 --nodes 60000 --log cand.jsonl --resume
 
 4. **Outside yardstick** -- our engine against Fairy-Stockfish under our rules:
 

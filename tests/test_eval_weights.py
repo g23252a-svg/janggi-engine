@@ -98,6 +98,11 @@ def test_only_table_one_is_writable_and_lengths_are_checked():
         core.core_set_eval_table(1, scalars[:-1])
     core.core_set_eval_table(1, scalars, pst)      # a no-op round trip
     assert core.core_get_eval_table(1) == (scalars, pst)
+    with pytest.raises(ValueError):                 # a short table is refused, not read past its end
+        core.core_set_eval_table(1, scalars, pst[:100])
+    with pytest.raises((ValueError, TypeError)):     # a bad value leaves the table as it was
+        core.core_set_eval_table(1, scalars[:-1] + ["x"], pst)
+    assert core.core_get_eval_table(1) == (scalars, pst)
 
 
 def test_the_tuned_tables_have_the_core_layout():

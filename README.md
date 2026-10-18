@@ -186,7 +186,7 @@ What that measurement currently says, at an equal 60k nodes per move:
 
 | technique | score with it on | verdict |
 | --- | ---: | --- |
-| evaluator weights fitted to Fairy-Stockfish (`evalw=0` turns them off, 1.5.0, ships) | **80.0% of 60 at 60k, 88.3% of 60 at 300k** (shipped weights before the official-points lock fix; release build in CHANGELOG) | the largest measured gain in this repository; see CHANGELOG |
+| evaluator weights fitted to Fairy-Stockfish (`evalw=0` turns them off, 1.5.0, ships) | **80.0% of 60 at 60k, 88.3% of 60 at 300k** (shipped weights before the endgame-lock fix; release build in CHANGELOG) | the largest measured gain in this repository; see CHANGELOG |
 | the Janggi-aware evaluator (`eval=1` turns it off) | 75.0% of 80 | clearly better, +191 elo |
 | history-scaled late move reductions (`histlmr`) | 72.5% of 40 | clearly better, +168 elo |
 | futility + late-move pruning | 65.0% of 40 | clearly better |

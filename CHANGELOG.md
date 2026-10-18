@@ -21,15 +21,18 @@ judgement. Fairy-Stockfish is an external, GPL-3 program; it is not part of
 this repository, it was used only offline as a teacher and a yardstick, and
 nothing at run time calls it.
 
-**The weights are a table now.** Every constant of the compiled evaluator
+**The weights are a table now.** The compiled evaluator's weights
 (material, the phase terms, soldier/chariot/cannon/horse/elephant/guard
-terms, king danger, general exposure, loose pieces, mobility) is read from a
-50-slot table `EW`, plus a 720-entry piece-square table. Table 0 is the
+terms, the king-danger scale, general exposure, loose pieces, mobility) are
+read from a 50-slot table `EW`, plus a 720-entry piece-square table; the
+attack weights inside king danger, the palace units and the endgame lock stay
+fixed. Table 0 is the
 hand-set evaluator value for value -- `evalw=0` is node-identical to 1.4.0
 (same moves, scores and node counts; the 1.0.0 pin still costs 2,822,961
 nodes). Table 1, the default, is loaded from `janggi/eval_weights.py`. Table
 2 is a candidate slot for A/B matches (`python -m janggi.match --table2
-result.json --a "evalw=2" --b ""`). Two terms exist only for the tuned
+result.json --a "evalw=2" --b ""`; the candidate's hash is part of the match
+log, so `--resume` and `--pool` keep different candidates apart). Two terms exist only for the tuned
 tables: a tempo bonus for the side to move (v2 evaluator only) and mobility
 counted per piece type.
 
@@ -54,19 +57,20 @@ undeveloped horses and elephants on the back rank, chariots in the corner,
 flank soldiers and a general on the front row of the palace are bad; the
 side to move is worth about 60.
 
-**The endgame lock still counts official points.** From ply 80 the lock adds
-the material sum again (twice from ply 120) so that a game going to the
+**The endgame lock still counts the hand-set material.** From ply 80 the lock
+adds the material sum again (twice from ply 120) so that a game going to the
 200-ply cap is played for points. With the tuned table live it keeps counting
-the hand-set material, not the tuned piece values, which rank some trades
-differently from the points that decide the game.
+the hand-set material exactly as 1.4.0 did -- the official points x100 on a
+full board, phase-adjusted as it empties, without Han's 1.5 -- not the tuned
+piece values, which rank some trades differently.
 
 | tuned (1.5.0) against 1.4.0 | result |
 | --- | --- |
 | re-weighting + piece-square table, 60k | +46 =0 -14, 76.7%, +207 elo (pairs CI 66.4..86.9) |
 | + tempo and per-type mobility (shipped weights), 60k | +48 =0 -12, 80.0%, +241 elo (pairs CI 71.1..88.9) |
 | + tempo and per-type mobility (shipped weights), 300k | +53 =0 -7, 88.3%, +352 elo (pairs CI 80.6..96.0) |
-| **the release build (with the official-points lock), 60k** | **FINAL60** |
-| **the release build (with the official-points lock), 300k** | **FINAL300** |
+| **the release build (with the hand-set-material lock), 60k** | **FINAL60** |
+| **the release build (with the hand-set-material lock), 300k** | **FINAL300** |
 | against Fairy-Stockfish at 100k nodes, ours at 300k, same 10 openings | 1.4.0 +2 =0 -8 (20%); shipped weights +6 =0 -4 (60%) |
 
 The tuned evaluator costs about 2% in nodes per second, and it uses fewer

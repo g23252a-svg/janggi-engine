@@ -24,6 +24,7 @@ Design notes that matter for the numbers being meaningful:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -170,7 +171,8 @@ def _load_log(path: str | None) -> dict[tuple[int, bool], dict]:
 
 
 def run_match(a: Config, b: Config, games: int, seed: int, opening_plies: int,
-              log_path: str | None = None, resume: bool = False) -> dict:
+              log_path: str | None = None, resume: bool = False,
+              table2: str | None = None) -> dict:
     """Play the match. With ``log_path`` every finished game is appended as one
     JSON line, and with ``resume`` games already in that log are counted and
     skipped -- so a run killed at game 19 of 60 continues from game 20 instead
@@ -190,12 +192,14 @@ def run_match(a: Config, b: Config, games: int, seed: int, opening_plies: int,
     budget = {"nodes": None if a.time_limit else a.nodes, "time": a.time_limit, "depth": a.depth}
     for key, rec in list(done.items()):
         same = (rec.get("a") == a.spec and rec.get("b") == b.spec
-                and rec.get("budget", budget) == budget)
+                and rec.get("budget", budget) == budget
+                and rec.get("table2") == table2)
         if not same:
             raise SystemExit(
                 f"--resume: {log_path} holds game {key} from a different match "
-                f"(a={rec.get('a')!r} b={rec.get('b')!r} budget={rec.get('budget')}); "
-                f"this run is a={a.spec!r} b={b.spec!r} budget={budget}. Use another --log."
+                f"(a={rec.get('a')!r} b={rec.get('b')!r} budget={rec.get('budget')} "
+                f"table2={rec.get('table2')}); this run is a={a.spec!r} b={b.spec!r} "
+                f"budget={budget} table2={table2}. Use another --log."
             )
     skipped = 0
     pair_scores: list[float] = []
@@ -226,6 +230,7 @@ def run_match(a: Config, b: Config, games: int, seed: int, opening_plies: int,
                             "seed": game_seed, "a_is_cho": a_is_cho,
                             "winner": winner, "plies": plies, "reason": reason,
                             "a": a.spec, "b": b.spec, "budget": budget,
+                            **({"table2": table2} if table2 else {}),
                             "spent": {"a": spent_a, "b": spent_b},
                         }) + "\n")
                         log_fh.flush()
@@ -267,13 +272,13 @@ def pool_logs(paths: list[str]) -> dict:
     parallel with different --seed ranges, or a match resumed across runs."""
     wins = draws = losses = 0
     seen: set[tuple[int, bool]] = set()
-    specs: set[tuple[str, str]] = set()
+    specs: set[tuple[str, str, str]] = set()
     by_pair: dict[int, dict[bool, float]] = {}
     endings: dict[str, list[int]] = {}
     used: dict[str, int] = {}
     for path in paths:
         for key, rec in _load_log(path).items():
-            specs.add((rec.get("a", ""), rec.get("b", "")))
+            specs.add((rec.get("a", ""), rec.get("b", ""), rec.get("table2") or ""))
             if key in seen:
                 continue                     # the same game logged twice
             seen.add(key)
@@ -407,19 +412,22 @@ def main() -> None:
         pool_logs(args.pool)
         return
 
+    table2 = None
     if args.table2:
         from janggi._core import core_set_eval_table
         with open(args.table2, encoding="utf-8") as fh:
             spec = json.load(fh)
-        spec = spec.get("pst", spec) if "w" not in spec else spec
+        if "w" not in spec:          # tools/evaltune/tune.py output
+            spec = spec.get("pst") or spec.get("scalars") or spec
         core_set_eval_table(2, spec["w"], spec.get("pst"))
-        print(f"table 2 (evalw=2) <- {args.table2}")
+        table2 = hashlib.sha256(json.dumps([list(spec["w"]), spec.get("pst")]).encode()).hexdigest()[:16]
+        print(f"table 2 (evalw=2) <- {args.table2} [{table2}]")
     a = Config("A", args.depth_a or args.depth, args.nodes_a or args.nodes, args.time, args.a)
     b = Config("B", args.depth_b or args.depth, args.nodes_b or args.nodes, args.time, args.b)
     budget = f"{args.time}s/move" if args.time else f"{args.nodes} nodes/move"
     print(f"A: depth<={a.depth} {budget} opts={a.spec or 'default'}")
     print(f"B: depth<={b.depth} {budget} opts={b.spec or 'default'}")
-    run_match(a, b, args.games, args.seed, args.opening_plies, args.log, args.resume)
+    run_match(a, b, args.games, args.seed, args.opening_plies, args.log, args.resume, table2)
 
 
 if __name__ == "__main__":

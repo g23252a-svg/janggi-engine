@@ -1021,8 +1021,11 @@ cdef int _palace_units(int* piece, int* side, int* amap, int gr, int gc,
 
 
 # --- evaluator weights (evalw) -------------------------------------------
-# Every constant of _evaluate2 lives in EW (and the piece-square table EWP), so
-# the evaluator can be re-weighted without touching its code. Table 0 is the
+# The weights of _evaluate2 live in EW (and the piece-square table EWP), so the
+# evaluator can be re-weighted without touching its code. Fixed, in every
+# table: the per-piece attack weights behind king danger (KDANGER, KFORCE), the
+# ksafe palace units, the optional soldier table and the endgame lock's
+# hand-set material. Table 0 is the
 # hand-set evaluator, value for value (evalw=0 is node-identical to the build
 # before this table existed); table 1 is filled from Python
 # (janggi/eval_weights.py through core_set_eval_table) with a tuned set.
@@ -1120,19 +1123,28 @@ def core_set_eval_table(int which, scalars, pst=None):
     """Fill table 1 (the tuned set) or 2 (a candidate, for A/B matches) with
     NEW scalars and an optional NEWP-entry piece-square table. Table 0, the
     hand-set evaluator, is read-only."""
-    cdef int i
+    cdef int i, haspst = 0
+    cdef int tw[NEW]
+    cdef int tp[NEWP]
     if which != 1 and which != 2:
         raise ValueError("only tables 1 and 2 can be set")
     if len(scalars) != NEW:
         raise ValueError(f"need {NEW} scalars, got {len(scalars)}")
+    if pst is not None and len(pst) != NEWP:
+        raise ValueError(f"need {NEWP} piece-square entries, got {len(pst)}")
+    # Convert everything first: a bad value leaves the table as it was.
     for i in range(NEW):
-        EWT[which][i] = int(scalars[i])
-    g_ewt_set[which] = 1
-    g_ewt_pst[which] = 0
+        tw[i] = int(scalars[i])
     for i in range(NEWP):
-        EWPT[which][i] = int(pst[i]) if pst is not None else 0
-        if EWPT[which][i] != 0:
-            g_ewt_pst[which] = 1
+        tp[i] = int(pst[i]) if pst is not None else 0
+        if tp[i] != 0:
+            haspst = 1
+    for i in range(NEW):
+        EWT[which][i] = tw[i]
+    for i in range(NEWP):
+        EWPT[which][i] = tp[i]
+    g_ewt_pst[which] = haspst
+    g_ewt_set[which] = 1
 
 
 def core_get_eval_table(int which):
@@ -1235,11 +1247,12 @@ cdef int _evaluate2(int* piece, int* side):
             elif pc == 4:
                 base -= (EW[EW_PH_ELE] * (256 - phase)) // 256
             material += base if s == 1 else -base
-            # The endgame lock tracks official points, so it always counts the
-            # hand-set material (table 0's values), whatever table is live:
-            # tuned piece values rank some trades differently from the points
-            # that decide a game at the 200-ply cap. With table 0 live this is
-            # `material` exactly.
+            # The endgame lock counts the hand-set material whatever table is
+            # live, as 1.4.0 did: table 0's PVAL and phase terms -- the
+            # official points x100 on a full board, only approximately as it
+            # empties. Tuned piece values rank some trades differently from
+            # the points that decide a game at the 200-ply cap. With table 0
+            # live this is `material` exactly.
             if g_evalw:
                 lbase = PVAL[pc]
                 if pc == 2:
@@ -1572,10 +1585,13 @@ cdef int _time_up():
 
 cdef inline int _eval_for(int* piece, int* side, int who):
     """Static score from `who`'s point of view."""
-    cdef int s
+    cdef int s, t
     if g_eval_ver == 2:
         s = _evaluate2(piece, side)
-        return (-s if who == 2 else s) + EW[EW_TEMPO]   # tempo: fitted for _evaluate2 only
+        t = EW[EW_TEMPO]                   # tempo: fitted for _evaluate2 only
+        if t and g_lockscale == 2 and g_base_ply >= 80:
+            t = t // (3 if g_base_ply >= 120 else 2)   # lockscale=2 divides the whole evaluation
+        return (-s if who == 2 else s) + t
     s = _evaluate(piece, side)
     return -s if who == 2 else s
 
@@ -2722,7 +2738,7 @@ def core_eval2_probe(int[::1] piece, int[::1] side, int base_ply,
     weight table EW (table 1's code path) is const + sum(EW[k] * f[k]) plus
     the piece-square entries, up to integer truncation. Measured, not
     mirrored: const is _evaluate2 with every weight zero -- the part no weight
-    touches, which is the endgame lock on official points from base ply 80 --
+    touches, which is the endgame lock on the hand-set material from base ply 80 --
     and f[k] is _evaluate2 with only EW[k] = scale, minus const, divided by
     scale: the same code the search runs. The general's own material (slot
     6) is skipped; it cancels whenever both generals stand."""
@@ -2738,7 +2754,7 @@ def core_eval2_probe(int[::1] piece, int[::1] side, int base_ply,
         g_base_ply = base_ply
         h_top = 0
         g_use_pst = 0
-        g_evalw = 1           # table 1's code path: per-type mobility, the official-points lock
+        g_evalw = 1           # table 1's code path: per-type mobility, the hand-set-material lock
         for i in range(NEW):
             EW[i] = 0
         const = _evaluate2(&piece[0], &side[0])
