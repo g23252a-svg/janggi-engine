@@ -175,7 +175,7 @@ class SearchOptions:
     tt_eval: int = 1                # 0 off; 1 a stored TT bound replaces static_eval for RFP / NMP gate / futility, + futility floor
     root_fail_high: bool = False    # a root fail-high goes first in the redo and is kept if the redo times out inside it
     king_safety: int = 1            # 0 off; 1 palace safety units in king danger; 2 = 1 without the v1 exposure term
-    eval_weights: int = 0           # 0 the hand-set evaluator weights; 1 the tuned table (janggi/eval_weights.py)
+    eval_weights: int = 0           # 0 the hand-set evaluator weights; 1 the tuned table (janggi/eval_weights.py); 2 an A/B candidate table
 
     _ALIASES = {
         "tt": "use_tt", "lmr": "use_lmr", "ext": "use_ext", "nmp": "use_nmp",
@@ -194,7 +194,7 @@ class SearchOptions:
     # Integer modes and their valid range. The core treats an unknown mode as
     # off, so a typo in an A/B spec would silently measure the unguarded engine.
     _RANGES = {"qsearch_guard": (0, 6), "lock_scale": (0, 2), "null_check_guard": (0, 2),
-               "tt_eval": (0, 1), "king_safety": (0, 2), "eval_weights": (0, 1)}
+               "tt_eval": (0, 1), "king_safety": (0, 2), "eval_weights": (0, 2)}
 
     @classmethod
     def parse(cls, spec: str) -> "SearchOptions":

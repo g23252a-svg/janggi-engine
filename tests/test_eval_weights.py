@@ -34,7 +34,8 @@ HAND_SET = [0, 1300, 700, 500, 300, 200, 10000, 300,
             100, 12,
             0, 360, 260, 190, 130, 25, 0, 90,
             0, 120, 90, 65, 40, 0, 0, 25,
-            0]
+            0,
+            0, 0, 0, 0, 0]
 
 
 def _positions(count, seed=7, plies=50):
@@ -92,6 +93,8 @@ def test_only_table_one_is_writable_and_lengths_are_checked():
     with pytest.raises(ValueError):
         core.core_set_eval_table(0, scalars)
     with pytest.raises(ValueError):
+        core.core_set_eval_table(3, scalars)
+    with pytest.raises(ValueError):
         core.core_set_eval_table(1, scalars[:-1])
     core.core_set_eval_table(1, scalars, pst)      # a no-op round trip
     assert core.core_get_eval_table(1) == (scalars, pst)
@@ -100,8 +103,9 @@ def test_only_table_one_is_writable_and_lengths_are_checked():
 def test_option_parses_and_is_range_checked():
     assert SearchOptions.parse("evalw=1").eval_weights == 1
     assert SearchOptions().eval_weights == 0
+    assert SearchOptions.parse("evalw=2").eval_weights == 2
     with pytest.raises(ValueError):
-        SearchOptions.parse("evalw=2")
+        SearchOptions.parse("evalw=3")
 
 
 @needs_core

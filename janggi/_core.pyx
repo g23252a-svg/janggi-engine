@@ -232,9 +232,12 @@ KFORCE[0]=0; KFORCE[1]=2; KFORCE[2]=1; KFORCE[3]=1; KFORCE[4]=0; KFORCE[5]=0; KF
 #
 # amap layout: amap[(s - 1) * 90 + sq], s = 1 HAN / 2 CHO.
 cdef void _attack_maps(int* piece, int* side, int* amap):
-    _attack_maps_w(piece, side, amap, NULL)
+    _attack_maps_w(piece, side, amap, NULL, NULL)
 
-cdef void _attack_maps_w(int* piece, int* side, int* amap, int* awt):
+cdef void _attack_maps_w(int* piece, int* side, int* amap, int* awt, int* mobc):
+    # mobc (may be NULL): mobc[(s-1)*8 + pc] counts, for chariots, cannons,
+    # horses and elephants, the squares each bears on that do not hold a
+    # piece of its own side -- per-piece-type mobility for evalw table 1.
     cdef int i, r, c, idx, pc, s, d, dr, dc, nr, nc, t, base, fwd, jumped
     cdef int sr, sc, b1r, b1c, b2r, b2c
     cdef int ORTH[4][2]
@@ -283,6 +286,8 @@ cdef void _attack_maps_w(int* piece, int* side, int* amap, int* awt):
                     nr = r+dr; nc = c+dc
                     while 0 <= nr < ROWS and 0 <= nc < COLS:
                         amap[base + nr*COLS+nc] = 1
+                        if mobc != NULL and (piece[nr*COLS+nc] == 0 or side[nr*COLS+nc] != s):
+                            mobc[base // 90 * 8 + pc] += 1
                         if awt != NULL:
                             awt[base + nr*COLS+nc] += KDANGER[pc]
                         if piece[nr*COLS+nc] != 0:
@@ -295,6 +300,8 @@ cdef void _attack_maps_w(int* piece, int* side, int* amap, int* awt):
                         while (0 <= nr < ROWS and 0 <= nc < COLS and _is_pdiag(nr,nc)
                                and _same_half(r,nr)):
                             amap[base + nr*COLS+nc] = 1
+                            if mobc != NULL and (piece[nr*COLS+nc] == 0 or side[nr*COLS+nc] != s):
+                                mobc[base // 90 * 8 + pc] += 1
                             if awt != NULL:
                                 awt[base + nr*COLS+nc] += KDANGER[pc]
                             if piece[nr*COLS+nc] != 0:
@@ -317,6 +324,8 @@ cdef void _attack_maps_w(int* piece, int* side, int* amap, int* awt):
                             if t == 2:
                                 break        # never bears on a cannon
                             amap[base + nr*COLS+nc] = 1
+                            if mobc != NULL and (piece[nr*COLS+nc] == 0 or side[nr*COLS+nc] != s):
+                                mobc[base // 90 * 8 + pc] += 1
                             if awt != NULL:
                                 awt[base + nr*COLS+nc] += KDANGER[pc]
                             if t != 0:
@@ -339,6 +348,8 @@ cdef void _attack_maps_w(int* piece, int* side, int* amap, int* awt):
                                 if t == 2:
                                     break
                                 amap[base + nr*COLS+nc] = 1
+                                if mobc != NULL and (piece[nr*COLS+nc] == 0 or side[nr*COLS+nc] != s):
+                                    mobc[base // 90 * 8 + pc] += 1
                                 if awt != NULL:
                                     awt[base + nr*COLS+nc] += KDANGER[pc]
                                 if t != 0:
@@ -352,6 +363,8 @@ cdef void _attack_maps_w(int* piece, int* side, int* amap, int* awt):
                         nr = r + HL[i][2]; nc = c + HL[i][3]
                         if 0 <= nr < ROWS and 0 <= nc < COLS:
                             amap[base + nr*COLS+nc] = 1
+                            if mobc != NULL and (piece[nr*COLS+nc] == 0 or side[nr*COLS+nc] != s):
+                                mobc[base // 90 * 8 + pc] += 1
                             if awt != NULL:
                                 awt[base + nr*COLS+nc] += KDANGER[pc]
 
@@ -365,6 +378,8 @@ cdef void _attack_maps_w(int* piece, int* side, int* amap, int* awt):
                         nr = r + EL[i][4]; nc = c + EL[i][5]
                         if 0 <= nr < ROWS and 0 <= nc < COLS:
                             amap[base + nr*COLS+nc] = 1
+                            if mobc != NULL and (piece[nr*COLS+nc] == 0 or side[nr*COLS+nc] != s):
+                                mobc[base // 90 * 8 + pc] += 1
                             if awt != NULL:
                                 awt[base + nr*COLS+nc] += KDANGER[pc]
 
@@ -1012,7 +1027,7 @@ cdef int _palace_units(int* piece, int* side, int* amap, int gr, int gc,
 # before this table existed); table 1 is filled from Python
 # (janggi/eval_weights.py through core_set_eval_table) with a tuned set.
 # core_reset / core_eval copy the chosen table into EW / EWP.
-DEF NEW = 45
+DEF NEW = 50
 DEF EW_PV = 0          # 0..7: material by piece code (6, the general, never tuned)
 DEF EW_PH_CAN = 8      # cannon loses EW * (256 - phase) / 256 as the board empties
 DEF EW_PH_SOL = 9      # soldier gains it
@@ -1037,11 +1052,13 @@ DEF EW_GEN_EXP = 27
 DEF EW_UNDEF = 28      # 28..35: attacked and undefended, by piece code
 DEF EW_DEF = 36        # 36..43: attacked and defended, by piece code
 DEF EW_MOB = 44        # coverage mobility; table 0 takes it from the mob option
+DEF EW_TEMPO = 45      # side-to-move bonus, added by _eval_for (0 in table 0)
+DEF EW_MOBT = 46       # 46..49: per-type mobility of chariot, cannon, horse, elephant (table 1 only)
 DEF NEWP = 720         # EWP[piece code * 90 + square seen from the owner's side]
 cdef int EW[NEW]
 cdef int EWP[NEWP]
-cdef int EWT[2][NEW]
-cdef int EWPT[2][NEWP]
+cdef int EWT[3][NEW]
+cdef int EWPT[3][NEWP]
 cdef int g_evalw = 0
 cdef int g_use_pst = 0
 EWT[0][:] = [0, 1300, 700, 500, 300, 200, 10000, 300,
@@ -1055,13 +1072,17 @@ EWT[0][:] = [0, 1300, 700, 500, 300, 200, 10000, 300,
              100, 12,
              0, 360, 260, 190, 130, 25, 0, 90,
              0, 120, 90, 65, 40, 0, 0, 25,
-             0]
+             0,
+             0, 0, 0, 0, 0]
 EWT[1][:] = EWT[0][:]
+EWT[2][:] = EWT[0][:]
 cdef int _ewi
 for _ewi in range(NEWP):
     EWPT[0][_ewi] = 0
     EWPT[1][_ewi] = 0
-cdef int g_ewt1_pst = 0      # table 1 has a non-zero piece-square table
+    EWPT[2][_ewi] = 0
+cdef int g_ewt_pst[3]        # table i has a non-zero piece-square table
+g_ewt_pst[0] = 0; g_ewt_pst[1] = 0; g_ewt_pst[2] = 0
 
 
 cdef void _load_eval_table(int which, int mob):
@@ -1069,7 +1090,7 @@ cdef void _load_eval_table(int which, int mob):
     mobility weight from the mob option (as before EW existed)."""
     global g_evalw, g_use_pst
     cdef int i
-    if which != 1:
+    if which != 1 and which != 2:
         which = 0
     g_evalw = which
     for i in range(NEW):
@@ -1080,31 +1101,31 @@ cdef void _load_eval_table(int which, int mob):
         EW[EW_MOB] = mob
         g_use_pst = 0
     else:
-        g_use_pst = g_ewt1_pst
+        g_use_pst = g_ewt_pst[which]
 _load_eval_table(0, 0)
 
 
 def core_set_eval_table(int which, scalars, pst=None):
-    """Fill table 1 (the only writable one) with NEW scalars and an optional
-    NEWP-entry piece-square table."""
-    global g_ewt1_pst
+    """Fill table 1 (the tuned set) or 2 (a candidate, for A/B matches) with
+    NEW scalars and an optional NEWP-entry piece-square table. Table 0, the
+    hand-set evaluator, is read-only."""
     cdef int i
-    if which != 1:
-        raise ValueError("only table 1 can be set")
+    if which != 1 and which != 2:
+        raise ValueError("only tables 1 and 2 can be set")
     if len(scalars) != NEW:
         raise ValueError(f"need {NEW} scalars, got {len(scalars)}")
     for i in range(NEW):
-        EWT[1][i] = int(scalars[i])
-    g_ewt1_pst = 0
+        EWT[which][i] = int(scalars[i])
+    g_ewt_pst[which] = 0
     for i in range(NEWP):
-        EWPT[1][i] = int(pst[i]) if pst is not None else 0
-        if EWPT[1][i] != 0:
-            g_ewt1_pst = 1
+        EWPT[which][i] = int(pst[i]) if pst is not None else 0
+        if EWPT[which][i] != 0:
+            g_ewt_pst[which] = 1
 
 
 def core_get_eval_table(int which):
-    if which not in (0, 1):
-        raise ValueError("table 0 or 1")
+    if which not in (0, 1, 2):
+        raise ValueError("table 0, 1 or 2")
     return [EWT[which][i] for i in range(NEW)], [EWPT[which][i] for i in range(NEWP)]
 
 
@@ -1115,6 +1136,8 @@ cdef int _evaluate2(int* piece, int* side):
     cdef int ghr = -1, ghc = -1, gcr = -1, gcc = -1
     cdef int amap[180]
     cdef int awt[180]
+    cdef int mobc[16]
+    cdef int* mobp = NULL
     cdef int sol_file[2][9]        # soldiers per side per file
     cdef int occ_file[9]           # any piece on the file (for open-file chariots)
     cdef int phase, freelegs, danger_h = 0, danger_c = 0
@@ -1174,7 +1197,11 @@ cdef int _evaluate2(int* piece, int* side):
     if phase < 0:
         phase = 0
 
-    _attack_maps_w(piece, side, amap, awt)
+    if g_evalw:
+        for i in range(16):
+            mobc[i] = 0
+        mobp = mobc
+    _attack_maps_w(piece, side, amap, awt, mobp)
 
     for r in range(ROWS):
         for c in range(COLS):
@@ -1310,6 +1337,9 @@ cdef int _evaluate2(int* piece, int* side):
             score += material * 2
         elif g_base_ply >= 80:
             score += material
+    if mobp != NULL:
+        for i in range(1, 5):
+            score += EW[EW_MOBT + i - 1] * (mobc[i] - mobc[8 + i])
     if EW[EW_MOB]:
         # Coverage-based mobility: squares each side bears on, minus the ones
         # its own pieces stand on (bearing on your own piece is defence, not
@@ -1514,7 +1544,7 @@ cdef int _time_up():
 cdef inline int _eval_for(int* piece, int* side, int who):
     """Static score from `who`'s point of view."""
     cdef int s = _evaluate2(piece, side) if g_eval_ver == 2 else _evaluate(piece, side)
-    return -s if who == 2 else s
+    return (-s if who == 2 else s) + EW[EW_TEMPO]
 
 
 cdef int _is_repetition():
@@ -2659,7 +2689,7 @@ def core_eval2_probe(int[::1] piece, int[::1] side, int base_ply,
     with every weight zero but EW[k] = scale, divided by scale -- the same
     code the search runs. The general's own material (slot 6) is skipped; it
     cancels whenever both generals stand."""
-    global g_soltab, g_mob, g_lockscale, g_ksafe, g_use_pst
+    global g_soltab, g_mob, g_lockscale, g_ksafe, g_use_pst, g_evalw
     cdef int keep_soltab = g_soltab, keep_mob = g_mob
     cdef int keep_lockscale = g_lockscale, keep_ksafe = g_ksafe
     cdef int keep_evalw = g_evalw, keep_ewmob = EW[EW_MOB]
@@ -2671,6 +2701,7 @@ def core_eval2_probe(int[::1] piece, int[::1] side, int base_ply,
         g_base_ply = base_ply
         h_top = 0
         g_use_pst = 0
+        g_evalw = 1           # so per-type mobility is counted
         for k in range(NEW):
             if k == EW_PV + 6 or k == EW_PV:
                 continue
