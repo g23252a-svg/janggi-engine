@@ -3,6 +3,89 @@
 Versions before 0.4.0 predate this file; `setup.py` sat at 0.3.0 through all
 three of the patches below, which is what 1.0.0's versioning work is about.
 
+## 1.5.0 — the evaluator, re-weighted against a much stronger engine
+
+A user played HAN on 2026-10-18, followed every one of the engine's 42
+recommendations, and was ground down from 46% to nothing without a single
+blunder. Scored move by move by Fairy-Stockfish 14 (5 s a move), the
+recommendations lost 47 cp a move on average and matched its first choice 19
+times in 42; the opponent lost 6 cp a move, matched it 23 times and was within
+20 cp 36 times. The search was not the problem -- our own deep re-search
+agreed with our moves -- the judgement was: an equal-material position was
+-300 by move 30 and the engine did not see it coming. Against Fairy-Stockfish
+under our rules, 1.4.0 at 300k nodes a move scored 2 of 10 against it at
+100k.
+
+So the hand-set evaluation weights were fitted to Fairy-Stockfish's
+judgement. Fairy-Stockfish is an external, GPL-3 program; it is not part of
+this repository, it was used only offline as a teacher and a yardstick, and
+nothing at run time calls it.
+
+**The weights are a table now.** Every constant of the compiled evaluator
+(material, the phase terms, soldier/chariot/cannon/horse/elephant/guard
+terms, king danger, general exposure, loose pieces, mobility) is read from a
+50-slot table `EW`, plus a 720-entry piece-square table. Table 0 is the
+hand-set evaluator value for value -- `evalw=0` is node-identical to 1.4.0
+(same moves, scores and node counts; the 1.0.0 pin still costs 2,822,961
+nodes). Table 1, the default, is loaded from `janggi/eval_weights.py`. Table
+2 is a candidate slot for A/B matches (`python -m janggi.match --table2
+result.json --a "evalw=2" --b ""`). Two terms exist only for the tuned
+tables: a tempo bonus for the side to move (v2 evaluator only) and mobility
+counted per piece type.
+
+**How it was fitted** (`tools/evaltune/`, reproducible with your own
+Fairy-Stockfish binary): 1,200 Fairy-Stockfish self-play games from random
+openings and formations, one move in ten replaced by a random legal move so
+unbalanced positions occur, every position scored by a 10,000-node search --
+134,708 positions, 100,470 of them quiet (not in check, best move not a
+capture, no mate). Fairy-Stockfish's `janggimodern` rules match ours move for
+move on 7,200 random positions; its default `janggi` variant does not (it
+forbids leaving the generals facing). The features are measured from the
+compiled evaluator itself (`core_eval2_probe`), and the fit is Texel-style in
+win-probability space with the chariot pinned at 1300. Held-out squared
+error: 0.00891 for the hand-set weights (with a fitted bias, tempo and
+scale), 0.00697 re-weighted, 0.00610 with the piece-square table.
+
+What it learned: cannons, soldiers and guards are worth less than the
+hand-set values (644, 156, 243 against 700, 200, 300), cannons lose more as
+the board empties; a piece merely attacked is far less of a liability than
+the old penalties said (an attacked, undefended chariot 151 instead of 360);
+undeveloped horses and elephants on the back rank, chariots in the corner,
+flank soldiers and a general on the front row of the palace are bad; the
+side to move is worth about 60.
+
+**The endgame lock still counts official points.** From ply 80 the lock adds
+the material sum again (twice from ply 120) so that a game going to the
+200-ply cap is played for points. With the tuned table live it keeps counting
+the hand-set material, not the tuned piece values, which rank some trades
+differently from the points that decide the game.
+
+| tuned (1.5.0) against 1.4.0 | result |
+| --- | --- |
+| re-weighting + piece-square table, 60k | +46 =0 -14, 76.7%, +207 elo (pairs CI 66.4..86.9) |
+| + tempo and per-type mobility (shipped weights), 60k | +48 =0 -12, 80.0%, +241 elo (pairs CI 71.1..88.9) |
+| + tempo and per-type mobility (shipped weights), 300k | +53 =0 -7, 88.3%, +352 elo (pairs CI 80.6..96.0) |
+| **the release build (with the official-points lock), 60k** | **FINAL60** |
+| **the release build (with the official-points lock), 300k** | **FINAL300** |
+| against Fairy-Stockfish at 100k nodes, ours at 300k, same 10 openings | 1.4.0 +2 =0 -8 (20%); shipped weights +6 =0 -4 (60%) |
+
+The tuned evaluator costs about 2% in nodes per second, and it uses fewer
+nodes per move in node-limited play (the fail-low extension fires less).
+Every lost-game regression test passes with it. Replaying the 2026-10-18
+game's 42 HAN positions at 500k nodes, the tuned engine loses less in the
+opening (plies 2-18: 13 cp a move against 28) but is no better over the whole
+game by Fairy-Stockfish's short search (61 against 57 cp a move); twice it
+wanted to step a guard to the palace centre where Fairy-Stockfish says that
+wastes a move. One game is a small sample; that pattern is the first thing to
+look at in the next round.
+
+Also: `mob=` now only acts with `evalw=0` and is refused otherwise (the
+tuned tables carry their own mobility weight); an unloaded table 1 or 2 is an
+error instead of silently playing other weights; a malformed
+`eval_weights.py` fails at import instead of quietly switching the compiled
+search off. The Pages build is pure Python and plays its own evaluator,
+unchanged.
+
 ## 1.4.0 — the board shows my chance of winning, and where the game turned
 
 A user played CHO on 2026-10-13 and was mated at ply 92. The page showed a

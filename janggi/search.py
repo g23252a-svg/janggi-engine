@@ -34,13 +34,16 @@ try:
     if _NO_ACCEL:
         raise ImportError("accelerators disabled by JANGGI_NO_ACCEL")
     from janggi._core import core_reset, core_negamax, core_search, core_stats, core_guard_stats
-    _HAVE_CORE = True
     from janggi._core import core_set_eval_table
-    from .eval_weights import TUNED_SCALARS, TUNED_PST
-    if TUNED_SCALARS is not None:
-        core_set_eval_table(1, TUNED_SCALARS, TUNED_PST)
+    _HAVE_CORE = True
 except Exception:
     _HAVE_CORE = False
+
+if _HAVE_CORE:
+    # Outside the guard on purpose: a broken eval_weights.py must fail loudly,
+    # not quietly turn the compiled search off.
+    from .eval_weights import TUNED_SCALARS, TUNED_PST
+    core_set_eval_table(1, TUNED_SCALARS, TUNED_PST)
 
 _CODE_PIECE = {1: "C", 2: "P", 3: "M", 4: "S", 5: "J", 6: "K", 7: "G"}
 
@@ -165,7 +168,7 @@ class SearchOptions:
     #     static eval, plus the cap: acts only where quiescence cycles
     qsearch_guard: int = 6
     soldier_table: int = 0          # 0 = linear advancement bonus, 1 = per-row table
-    mobility_weight: int = 2        # centipawns per covered square; 0 = off (2 since 1.2.0)
+    mobility_weight: int = 2        # evalw=0 only: centipawns per covered square; 0 = off (2 since 1.2.0). Tables 1/2 carry their own (slot 44)
     # The 1.2 campaign flags, node-identical when off. Four are on since
     # 1.3.0 (stacked: 56.7% at 60k and the 300k row in CHANGELOG, with 3%
     # fewer nodes for ksafe's speed cost); rootfh stays off -- it fails the
@@ -220,6 +223,10 @@ class SearchOptions:
                         raise ValueError(f"{key} must be {lo}..{hi}, got {raw!r}")
             else:
                 values[field_name] = raw.strip() not in ("0", "false", "False", "no")
+        if "mobility_weight" in values and values.get("eval_weights", cls.eval_weights) != 0:
+            # Tables 1 and 2 carry their own coverage weight; an A/B of mob=
+            # against them would compare two identical engines.
+            raise ValueError("mob only acts on the hand-set evaluator: add evalw=0")
         return cls(**values)
 
 

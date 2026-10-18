@@ -67,7 +67,7 @@ for i, r in enumerate(rows):
         P[i, pc * 90 + rel] += 1 if s == HAN else -1
     side = HAN if r["stm"] == "han" else CHO
     board = Board.from_grid(grid, side)
-    F[i] = core.core_eval2_probe(board._pc, board._sd, 0)
+    F[i], _ = core.core_eval2_probe(board._pc, board._sd, 0)   # base ply 0: no endgame lock
     y[i] = r["fsf"] if side == HAN else -r["fsf"]
     stm[i] = 1 if side == HAN else -1
     ply[i] = r["ply"]

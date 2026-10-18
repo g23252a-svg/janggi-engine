@@ -70,10 +70,10 @@ def test_probe_measures_the_evaluator():
     for b, _ in _positions(60):
         for ply in (10, 90, 130):
             ev = core.core_eval(b._pc, b._sd, ply, 2, 0, 2, 1, 1)
-            f = core.core_eval2_probe(b._pc, b._sd, ply)
+            f, const = core.core_eval2_probe(b._pc, b._sd, ply)
             w = list(scalars)
             w[44] = 2                      # table 0 takes mobility from the mob option
-            pred = sum(x * y for x, y in zip(w, f))
+            pred = const + sum(x * y for x, y in zip(w, f))
             assert abs(pred - ev) <= 12, (ply, pred, ev)
 
 
@@ -98,6 +98,54 @@ def test_only_table_one_is_writable_and_lengths_are_checked():
         core.core_set_eval_table(1, scalars[:-1])
     core.core_set_eval_table(1, scalars, pst)      # a no-op round trip
     assert core.core_get_eval_table(1) == (scalars, pst)
+
+
+def test_the_tuned_tables_have_the_core_layout():
+    """Checked without the extensions, so a malformed file fails everywhere."""
+    from janggi import eval_weights
+    assert len(eval_weights.TUNED_SCALARS) == len(HAND_SET)
+    assert len(eval_weights.TUNED_PST) == 720
+
+
+def test_mob_is_refused_where_it_cannot_act():
+    with pytest.raises(ValueError):
+        SearchOptions.parse("mob=0")              # the default table carries its own
+    assert SearchOptions.parse("evalw=0,mob=0").mobility_weight == 0
+    assert SearchOptions.parse("mob=6,evalw=0").mobility_weight == 6
+
+
+@needs_core
+def test_an_unloaded_candidate_table_is_refused():
+    b = Board.standard()                 # nothing in the suite loads table 2
+    with pytest.raises(ValueError):
+        Engine(max_depth=30, options=SearchOptions(node_limit=2000, eval_weights=2)).search(b, CHO)
+
+
+@needs_core
+def test_the_v1_evaluator_ignores_the_tables():
+    """eval=1 is the original evaluator whatever table is live: the tuned
+    tempo was fitted for the v2 evaluator and must not reach it."""
+    b = Board.standard()
+    runs = []
+    for ew in (0, 1):
+        e = Engine(max_depth=30, options=SearchOptions(node_limit=8000, eval_version=1, eval_weights=ew))
+        runs.append((e.search(b, CHO, game_ply=0), e.stats.total_nodes))
+    assert runs[0] == runs[1]
+
+
+@needs_core
+def test_the_endgame_lock_counts_official_material_on_every_table():
+    """From ply 80 the lock adds material on the official scale; with a
+    tuned table live it must not switch to the tuned piece values."""
+    import janggi._core as core
+    for b, _ in _positions(30, seed=5):
+        f, const = core.core_eval2_probe(b._pc, b._sd, 130)
+        f0, const0 = core.core_eval2_probe(b._pc, b._sd, 10)
+        # the weight-dependent part is the same at any ply; only the lock moves
+        assert f == f0
+        assert const0 == 0
+        lock = core.core_eval(b._pc, b._sd, 130, 2, 0, 2, 1, 1) - core.core_eval(b._pc, b._sd, 10, 2, 0, 2, 1, 1)
+        assert lock == const
 
 
 def test_option_parses_and_is_range_checked():

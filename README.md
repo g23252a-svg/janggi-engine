@@ -54,6 +54,12 @@ against live human opponents on online services.
   how many legs are actually free, soldier structure, loose-piece risk, king
   danger that grows with the square of the attacking force, and an endgame lock
   onto official material points.
+- **Weights fitted to a stronger engine (1.5.0).** Every evaluator weight
+  lives in a table; the default table, plus a piece-square table, a tempo
+  bonus and per-type mobility, was fitted to Fairy-Stockfish's scores of about
+  100,000 quiet positions (`tools/evaltune/`, `janggi/eval_weights.py`).
+  Against the hand-set weights it scores 80% at 60k and 88% at 300k nodes per
+  move; `evalw=0` brings the hand-set evaluator back, node for node.
 - **Opening book** built from recorded games (기보) — present but **off by
   default**, because the one in the repository was measured to cost about 138
   centipawns a move against simply searching. See the note in `server.py`.
@@ -171,13 +177,16 @@ and B played the identical game, and that the flag under test did nothing.
 
 Every technique can be switched off individually — `tt`, `lmr`, `ext`, `nmp`,
 `pvs`, `fut`, `lmp`, `asp`, `rep`, `histlmr`, plus
-`extbudget=` and `nodes=`. The same options are available in code through
+`extbudget=` and `nodes=`; `evalw=0` selects the hand-set evaluator weights,
+and `--table2 result.json` with `--a "evalw=2"` plays a candidate weight
+table against the shipped one. The same options are available in code through
 `SearchOptions`.
 
 What that measurement currently says, at an equal 60k nodes per move:
 
 | technique | score with it on | verdict |
 | --- | ---: | --- |
+| evaluator weights fitted to Fairy-Stockfish (`evalw=0` turns them off, 1.5.0, ships) | **80.0% of 60 at 60k, 88.3% of 60 at 300k** (shipped weights before the official-points lock fix; release build in CHANGELOG) | the largest measured gain in this repository; see CHANGELOG |
 | the Janggi-aware evaluator (`eval=1` turns it off) | 75.0% of 80 | clearly better, +191 elo |
 | history-scaled late move reductions (`histlmr`) | 72.5% of 40 | clearly better, +168 elo |
 | futility + late-move pruning | 65.0% of 40 | clearly better |
@@ -298,6 +307,7 @@ env vars are required (`PORT` is provided).
 janggi/
   board.py      rules core: board, move generation, legality (single source of truth)
   evaluate.py   static evaluation (all positional knowledge lives here)
+  eval_weights.py  the tuned weights of the compiled evaluator (table 1, the default)
   search.py     Engine, SearchOptions, and the pure-Python search
   see.py        static exchange evaluation
   repetition.py repetition bookkeeping over Zobrist keys
@@ -311,6 +321,7 @@ janggi/
   _core.pyx     compiled search core (search, evaluation, SEE, perft)
   _attack.pyx   compiled attack test
   _movegen.pyx  compiled move generator
+tools/evaltune/  how eval_weights.py was fitted against Fairy-Stockfish (not imported)
 server.py       Flask web server (analysis API + UI)
 templates/
   index.html    board front-end (served by Flask AND published to Pages)
@@ -325,6 +336,7 @@ tests/
   test_tactics.py  certified forced wins, incl. with each pruning pass disabled
   test_server.py   web API behaviour and input validation
   test_winprob.py  the win-probability curve and the mate count
+  test_eval_weights.py  the evaluator's weight tables, the probe, the tuned defaults
   test_web_build.py  the Pages build and its in-browser API
 ```
 

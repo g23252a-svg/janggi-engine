@@ -1083,6 +1083,17 @@ for _ewi in range(NEWP):
     EWPT[2][_ewi] = 0
 cdef int g_ewt_pst[3]        # table i has a non-zero piece-square table
 g_ewt_pst[0] = 0; g_ewt_pst[1] = 0; g_ewt_pst[2] = 0
+cdef int g_ewt_set[3]        # table i holds weights (0 always; 1 and 2 once core_set_eval_table filled them)
+g_ewt_set[0] = 1; g_ewt_set[1] = 0; g_ewt_set[2] = 0
+
+
+def _check_table(int which):
+    if which < 0 or which > 2:
+        raise ValueError(f"evalw must be 0, 1 or 2, got {which}")
+    if not g_ewt_set[which]:
+        raise ValueError(f"evalw={which}: no weights loaded into table {which} in this process "
+                         f"(janggi.search loads table 1 from janggi/eval_weights.py; "
+                         f"table 2 needs core_set_eval_table(2, ...))")
 
 
 cdef void _load_eval_table(int which, int mob):
@@ -1116,6 +1127,7 @@ def core_set_eval_table(int which, scalars, pst=None):
         raise ValueError(f"need {NEW} scalars, got {len(scalars)}")
     for i in range(NEW):
         EWT[which][i] = int(scalars[i])
+    g_ewt_set[which] = 1
     g_ewt_pst[which] = 0
     for i in range(NEWP):
         EWPT[which][i] = int(pst[i]) if pst is not None else 0
@@ -1133,6 +1145,7 @@ cdef int _evaluate2(int* piece, int* side):
     """HAN-positive static score. See the block comment above."""
     cdef int score = 0, material = 0, phase_mat = 0
     cdef int r, c, idx, pc, s, base, v, adv, i, d, nr, nc, lk, kcap
+    cdef int lockmat = 0, lbase
     cdef int ghr = -1, ghc = -1, gcr = -1, gcc = -1
     cdef int amap[180]
     cdef int awt[180]
@@ -1222,6 +1235,22 @@ cdef int _evaluate2(int* piece, int* side):
             elif pc == 4:
                 base -= (EW[EW_PH_ELE] * (256 - phase)) // 256
             material += base if s == 1 else -base
+            # The endgame lock tracks official points, so it always counts the
+            # hand-set material (table 0's values), whatever table is live:
+            # tuned piece values rank some trades differently from the points
+            # that decide a game at the 200-ply cap. With table 0 live this is
+            # `material` exactly.
+            if g_evalw:
+                lbase = PVAL[pc]
+                if pc == 2:
+                    lbase -= (150 * (256 - phase)) // 256
+                elif pc == 5:
+                    lbase += (60 * (256 - phase)) // 256
+                elif pc == 4:
+                    lbase -= (40 * (256 - phase)) // 256
+                lockmat += lbase if s == 1 else -lbase
+            else:
+                lockmat += base if s == 1 else -base
             v = base
 
             if pc == 5:      # soldier
@@ -1334,9 +1363,9 @@ cdef int _evaluate2(int* piece, int* side):
     # --- endgame lock onto official points --------------------------------
     if g_lockscale != 2:
         if g_base_ply >= 120:
-            score += material * 2
+            score += lockmat * 2
         elif g_base_ply >= 80:
-            score += material
+            score += lockmat
     if mobp != NULL:
         for i in range(1, 5):
             score += EW[EW_MOBT + i - 1] * (mobc[i] - mobc[8 + i])
@@ -1356,7 +1385,7 @@ cdef int _evaluate2(int* piece, int* side):
         # search (delta pruning, futility, RFP) means what it says again.
         # cdivision: // truncates toward zero, so colour symmetry holds.
         lk = 3 if g_base_ply >= 120 else 2
-        score = material + (score - material) // lk
+        score = lockmat + (score - lockmat) // lk
     return score
 
 
@@ -1543,8 +1572,12 @@ cdef int _time_up():
 
 cdef inline int _eval_for(int* piece, int* side, int who):
     """Static score from `who`'s point of view."""
-    cdef int s = _evaluate2(piece, side) if g_eval_ver == 2 else _evaluate(piece, side)
-    return (-s if who == 2 else s) + EW[EW_TEMPO]
+    cdef int s
+    if g_eval_ver == 2:
+        s = _evaluate2(piece, side)
+        return (-s if who == 2 else s) + EW[EW_TEMPO]   # tempo: fitted for _evaluate2 only
+    s = _evaluate(piece, side)
+    return -s if who == 2 else s
 
 
 cdef int _is_repetition():
@@ -2272,6 +2305,7 @@ def core_reset(int max_depth, int ext_budget, int use_tt=1, int use_lmr=1,
     g_use_tteval = tteval; g_tteval_used = 0
     g_use_rootfh = rootfh; g_rootfh_rot = 0; g_rootfh_kept = 0
     g_ksafe = ksafe
+    _check_table(evalw)
     _load_eval_table(evalw, mob)
     for i in range(204):
         root_iter[i] = 0
@@ -2665,6 +2699,7 @@ def core_eval(int[::1] piece, int[::1] side, int base_ply, int version=1,
     cdef int keep_soltab = g_soltab, keep_mob = g_mob
     cdef int keep_lockscale = g_lockscale, keep_ksafe = g_ksafe
     cdef int keep_evalw = g_evalw, keep_ewmob = EW[EW_MOB]
+    _check_table(evalw)
     g_soltab = soltab; g_mob = mob
     g_lockscale = lockscale; g_ksafe = ksafe
     _load_eval_table(evalw, mob)
@@ -2683,17 +2718,19 @@ def core_eval(int[::1] piece, int[::1] side, int base_ply, int version=1,
 
 def core_eval2_probe(int[::1] piece, int[::1] side, int base_ply,
                      int soltab=0, int lockscale=1, int ksafe=1, int scale=1000):
-    """The evaluator's feature vector: f[k] such that _evaluate2 with any
-    weight table EW is sum(EW[k] * f[k]) plus the piece-square entries (up to
-    integer truncation). Measured, not mirrored: each f[k] is _evaluate2 run
-    with every weight zero but EW[k] = scale, divided by scale -- the same
-    code the search runs. The general's own material (slot 6) is skipped; it
-    cancels whenever both generals stand."""
+    """The evaluator's features: (f, const) such that _evaluate2 with any
+    weight table EW (table 1's code path) is const + sum(EW[k] * f[k]) plus
+    the piece-square entries, up to integer truncation. Measured, not
+    mirrored: const is _evaluate2 with every weight zero -- the part no weight
+    touches, which is the endgame lock on official points from base ply 80 --
+    and f[k] is _evaluate2 with only EW[k] = scale, minus const, divided by
+    scale: the same code the search runs. The general's own material (slot
+    6) is skipped; it cancels whenever both generals stand."""
     global g_soltab, g_mob, g_lockscale, g_ksafe, g_use_pst, g_evalw
     cdef int keep_soltab = g_soltab, keep_mob = g_mob
     cdef int keep_lockscale = g_lockscale, keep_ksafe = g_ksafe
     cdef int keep_evalw = g_evalw, keep_ewmob = EW[EW_MOB]
-    cdef int k, i
+    cdef int k, i, const
     out = [0.0] * NEW
     g_soltab = soltab; g_lockscale = lockscale; g_ksafe = ksafe
     try:
@@ -2701,15 +2738,18 @@ def core_eval2_probe(int[::1] piece, int[::1] side, int base_ply,
         g_base_ply = base_ply
         h_top = 0
         g_use_pst = 0
-        g_evalw = 1           # so per-type mobility is counted
+        g_evalw = 1           # table 1's code path: per-type mobility, the official-points lock
+        for i in range(NEW):
+            EW[i] = 0
+        const = _evaluate2(&piece[0], &side[0])
         for k in range(NEW):
             if k == EW_PV + 6 or k == EW_PV:
                 continue
             for i in range(NEW):
                 EW[i] = 0
             EW[k] = scale
-            out[k] = _evaluate2(&piece[0], &side[0]) / <double>scale
-        return out
+            out[k] = (_evaluate2(&piece[0], &side[0]) - const) / <double>scale
+        return out, const
     finally:
         g_soltab = keep_soltab; g_mob = keep_mob
         g_lockscale = keep_lockscale; g_ksafe = keep_ksafe

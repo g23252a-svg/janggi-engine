@@ -397,12 +397,23 @@ def main() -> None:
     ap.add_argument("--resume", action="store_true", help="count and skip games already in --log")
     ap.add_argument("--pool", nargs="+", metavar="LOG", default=None,
                     help="summarize these game logs together instead of playing")
+    ap.add_argument("--table2", default=None, metavar="JSON",
+                    help='load evaluator table 2 (evalw=2) from a JSON file with "w" '
+                         '(the scalars) and optionally "pst", e.g. tools/evaltune/tune.py '
+                         'output\'s ["pst"] entry')
     args = ap.parse_args()
 
     if args.pool:
         pool_logs(args.pool)
         return
 
+    if args.table2:
+        from janggi._core import core_set_eval_table
+        with open(args.table2, encoding="utf-8") as fh:
+            spec = json.load(fh)
+        spec = spec.get("pst", spec) if "w" not in spec else spec
+        core_set_eval_table(2, spec["w"], spec.get("pst"))
+        print(f"table 2 (evalw=2) <- {args.table2}")
     a = Config("A", args.depth_a or args.depth, args.nodes_a or args.nodes, args.time, args.a)
     b = Config("B", args.depth_b or args.depth, args.nodes_b or args.nodes, args.time, args.b)
     budget = f"{args.time}s/move" if args.time else f"{args.nodes} nodes/move"
