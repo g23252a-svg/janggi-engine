@@ -101,8 +101,8 @@ def test_only_table_one_is_writable_and_lengths_are_checked():
 
 
 def test_option_parses_and_is_range_checked():
-    assert SearchOptions.parse("evalw=1").eval_weights == 1
-    assert SearchOptions().eval_weights == 0
+    assert SearchOptions.parse("evalw=0").eval_weights == 0
+    assert SearchOptions().eval_weights == 1          # the tuned table, since 1.5.0
     assert SearchOptions.parse("evalw=2").eval_weights == 2
     with pytest.raises(ValueError):
         SearchOptions.parse("evalw=3")
@@ -115,7 +115,7 @@ def test_table_one_drives_the_search():
     import janggi._core as core
     keep = core.core_get_eval_table(1)
     b = Board.standard()
-    e0 = Engine(max_depth=30, options=SearchOptions(node_limit=20000))
+    e0 = Engine(max_depth=30, options=SearchOptions(node_limit=20000, eval_weights=0))
     base = e0.search(b, CHO, game_ply=0)
     try:
         w = list(HAND_SET)
@@ -124,7 +124,39 @@ def test_table_one_drives_the_search():
         e1 = Engine(max_depth=30, options=SearchOptions(node_limit=20000, eval_weights=1))
         e1.search(b, CHO, game_ply=0)
         assert e1.stats.total_nodes != e0.stats.total_nodes
-        again = Engine(max_depth=30, options=SearchOptions(node_limit=20000)).search(b, CHO, game_ply=0)
+        again = Engine(max_depth=30, options=SearchOptions(node_limit=20000, eval_weights=0)).search(b, CHO, game_ply=0)
         assert again == base
     finally:
         core.core_set_eval_table(1, *keep)
+
+
+@needs_core
+def test_the_tuned_table_is_live():
+    """Importing the search loads janggi/eval_weights.py into table 1, and the
+    default engine plays with it."""
+    import janggi._core as core
+    from janggi import eval_weights
+    assert core.core_get_eval_table(1) == (list(eval_weights.TUNED_SCALARS), list(eval_weights.TUNED_PST))
+    assert len(eval_weights.TUNED_SCALARS) == len(HAND_SET)
+    assert eval_weights.TUNED_SCALARS[1] == 1300       # the chariot pins the units
+    assert eval_weights.TUNED_SCALARS[6] == 10000
+    b = Board.standard()
+    tuned = Engine(max_depth=30, options=SearchOptions(node_limit=20000))
+    hand = Engine(max_depth=30, options=SearchOptions(node_limit=20000, eval_weights=0))
+    tuned.search(b, CHO, game_ply=0); hand.search(b, CHO, game_ply=0)
+    assert tuned.stats.total_nodes != hand.stats.total_nodes
+
+
+def test_the_tuned_pst_is_left_right_symmetric_and_palace_bound():
+    from janggi import eval_weights
+    pst = eval_weights.TUNED_PST
+    assert len(pst) == 720
+    for pc in range(8):
+        for r in range(10):
+            for c in range(9):
+                assert pst[pc * 90 + r * 9 + c] == pst[pc * 90 + r * 9 + 8 - c]
+    for pc in (6, 7):                      # general and guards never leave the palace
+        for r in range(10):
+            for c in range(9):
+                if not (r <= 2 and 3 <= c <= 5):
+                    assert pst[pc * 90 + r * 9 + c] == 0

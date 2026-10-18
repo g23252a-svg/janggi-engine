@@ -112,7 +112,7 @@ def test_the_fail_low_extension_fires_once_and_at_most_doubles_the_budget():
     cost nothing when the budget is a depth."""
     # The 1.1.0 mechanism, measured on the 1.1.x evaluation it was built on;
     # with 1.2.0's defaults the position is resolved without needing it.
-    opts = SearchOptions.parse("rootguard=4,histmalus=0,mob=0,lockscale=0,nullchk=0,tteval=0,rootfh=0,ksafe=0")
+    opts = SearchOptions.parse("rootguard=4,histmalus=0,mob=0,lockscale=0,nullchk=0,tteval=0,rootfh=0,ksafe=0,evalw=0")
     engine = Engine(max_depth=30, options=SearchOptions(**{**opts.__dict__, "node_limit": SHIPPING_BUDGET}))
     move, score = engine.search(build(LOST_GAME_PLY_54), HAN, game_ply=53)
     assert move.as_tuple() in HOLDS
@@ -129,7 +129,7 @@ def test_the_fail_low_extension_fires_once_and_at_most_doubles_the_budget():
 
 DEPLOYED_1_0_0 = ("asp=1,rootguard=0,extbudget=3,histmalus=0,mthreat=0,"
                   "chkprune=0,lmrcap=0,soltab=0,mob=0,qguard=0,"
-                  "lockscale=0,nullchk=0,tteval=0,rootfh=0,ksafe=0")
+                  "lockscale=0,nullchk=0,tteval=0,rootfh=0,ksafe=0,evalw=0")
 DEPLOYED_1_0_0_DEPTH12_NODES = 2_822_961
 
 
@@ -168,7 +168,7 @@ SHIPPABLE = ["", DEPLOYED_1_0_0, "histmalus=1", "mthreat=2", "extbudget=4",
              "qguard=6",
              "rootguard=1,extbudget=4", "asp=0,rootguard=1",
              "lockscale=1", "lockscale=2", "tteval=1", "nullchk=2", "ksafe=1",
-             "lockscale=0,nullchk=0,tteval=0,rootfh=0,ksafe=0"]
+             "lockscale=0,nullchk=0,tteval=0,rootfh=0,ksafe=0", "evalw=0"]
 PROOF_SWEEP_BUDGET = 400_000
 
 
@@ -240,7 +240,7 @@ def test_the_quiescence_guard_reaches_the_core():
     # 1.1.x evaluation pinned: with 1.2.0's defaults the mate is found at
     # depth 10, before the depth-12 runaway could happen at all.
     base = dict(node_limit=SHIPPING_BUDGET, use_hist_malus=False, mobility_weight=0,
-                lock_scale=0, null_check_guard=0, tt_eval=0, king_safety=0)
+                lock_scale=0, null_check_guard=0, tt_eval=0, king_safety=0, eval_weights=0)
     off, _, _ = _search_2026_10_10(SearchOptions(**base, qsearch_guard=0))
     on, _, _ = _search_2026_10_10(SearchOptions(**base, qsearch_guard=6))
     assert off.qnodes * 2 > off.total_nodes and off.depth_reached == 11
@@ -274,8 +274,10 @@ def test_each_campaign_flag_reaches_the_core(spec):
     into the game so the endgame lock (and lockscale with it) is live."""
     # Compared against every campaign flag off, so a flag that is now a
     # default is still tested; two game plies, because lockscale only acts
-    # from ply 80 and nullchk does not change this position at ply 100.
-    off = "lockscale=0,nullchk=0,tteval=0,rootfh=0,ksafe=0"
+    # from ply 80 and nullchk does not change this position at ply 100. On the
+    # hand-set evaluator the flags were built on (evalw=0): with 1.5.0's tuned
+    # weights rootfh never acts in this position.
+    off = "lockscale=0,nullchk=0,tteval=0,rootfh=0,ksafe=0,evalw=0"
     def run(spec, ply):
         opts = SearchOptions.parse(spec)
         opts = SearchOptions(**{**opts.__dict__, "node_limit": 60_000, "root_guard_mode": 0})
