@@ -1,0 +1,126 @@
+"""The compiled evaluator's weight tables (evalw).
+
+Every constant of the compiled evaluator lives in a table: table 0 is the
+hand-set evaluator, value for value, and table 1 the tuned set from
+janggi/eval_weights.py. These tests pin that table 0 is the evaluator the
+engine always had, that the feature probe the tuner learns from measures the
+very code the search runs, and that the option is validated."""
+
+import os
+import random
+import sys
+
+import pytest
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from janggi.board import Board, CHO, FORMATIONS  # noqa: E402
+from janggi.search import Engine, SearchOptions, _HAVE_CORE  # noqa: E402
+
+needs_core = pytest.mark.skipif(
+    os.environ.get("JANGGI_NO_ACCEL") == "1" or not _HAVE_CORE,
+    reason="the weight tables live in the compiled core",
+)
+
+# The constants _evaluate2 carried before the table existed, in table order.
+HAND_SET = [0, 1300, 700, 500, 300, 200, 10000, 300,
+            150, 60, 40,
+            8, 10, 8, 30,
+            3, 25, 12, 20,
+            3, 15, 40,
+            3, 7,
+            5,
+            12,
+            100, 12,
+            0, 360, 260, 190, 130, 25, 0, 90,
+            0, 120, 90, 65, 40, 0, 0, 25,
+            0]
+
+
+def _positions(count, seed=7, plies=50):
+    rng = random.Random(seed)
+    forms = sorted(FORMATIONS)
+    out = []
+    while len(out) < count:
+        b = Board.standard(rng.choice(forms), rng.choice(forms))
+        for i in range(rng.randrange(plies)):
+            legal = b.legal_moves(b.side_to_move)
+            if not legal:
+                break
+            b.make(rng.choice(legal))
+        out.append((b, len(b._history)))
+    return out
+
+
+@needs_core
+def test_table_zero_is_the_hand_set_evaluator():
+    import janggi._core as core
+    scalars, pst = core.core_get_eval_table(0)
+    assert scalars == HAND_SET
+    assert not any(pst)
+
+
+@needs_core
+def test_probe_measures_the_evaluator():
+    """sum(table0 * probe) is the evaluation up to integer truncation, at every
+    lock phase -- the tuner's features are the search's own evaluator."""
+    import janggi._core as core
+    scalars, _ = core.core_get_eval_table(0)
+    for b, _ in _positions(60):
+        for ply in (10, 90, 130):
+            ev = core.core_eval(b._pc, b._sd, ply, 2, 0, 2, 1, 1)
+            f = core.core_eval2_probe(b._pc, b._sd, ply)
+            w = list(scalars)
+            w[44] = 2                      # table 0 takes mobility from the mob option
+            pred = sum(x * y for x, y in zip(w, f))
+            assert abs(pred - ev) <= 12, (ply, pred, ev)
+
+
+@needs_core
+def test_probe_leaves_the_live_table_alone():
+    import janggi._core as core
+    b, ply = _positions(1, seed=3)[0]
+    before = core.core_eval(b._pc, b._sd, ply, 2, 0, 2, 1, 1)
+    core.core_eval2_probe(b._pc, b._sd, ply)
+    assert core.core_eval(b._pc, b._sd, ply, 2, 0, 2, 1, 1) == before
+
+
+@needs_core
+def test_only_table_one_is_writable_and_lengths_are_checked():
+    import janggi._core as core
+    scalars, pst = core.core_get_eval_table(1)
+    with pytest.raises(ValueError):
+        core.core_set_eval_table(0, scalars)
+    with pytest.raises(ValueError):
+        core.core_set_eval_table(1, scalars[:-1])
+    core.core_set_eval_table(1, scalars, pst)      # a no-op round trip
+    assert core.core_get_eval_table(1) == (scalars, pst)
+
+
+def test_option_parses_and_is_range_checked():
+    assert SearchOptions.parse("evalw=1").eval_weights == 1
+    assert SearchOptions().eval_weights == 0
+    with pytest.raises(ValueError):
+        SearchOptions.parse("evalw=2")
+
+
+@needs_core
+def test_table_one_drives_the_search():
+    """With table 1 set to something else, evalw=1 searches differently and
+    evalw=0 is untouched."""
+    import janggi._core as core
+    keep = core.core_get_eval_table(1)
+    b = Board.standard()
+    e0 = Engine(max_depth=30, options=SearchOptions(node_limit=20000))
+    base = e0.search(b, CHO, game_ply=0)
+    try:
+        w = list(HAND_SET)
+        w[1] = 300                     # a chariot worth an elephant
+        core.core_set_eval_table(1, w, keep[1])
+        e1 = Engine(max_depth=30, options=SearchOptions(node_limit=20000, eval_weights=1))
+        e1.search(b, CHO, game_ply=0)
+        assert e1.stats.total_nodes != e0.stats.total_nodes
+        again = Engine(max_depth=30, options=SearchOptions(node_limit=20000)).search(b, CHO, game_ply=0)
+        assert again == base
+    finally:
+        core.core_set_eval_table(1, *keep)

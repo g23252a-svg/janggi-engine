@@ -35,6 +35,10 @@ try:
         raise ImportError("accelerators disabled by JANGGI_NO_ACCEL")
     from janggi._core import core_reset, core_negamax, core_search, core_stats, core_guard_stats
     _HAVE_CORE = True
+    from janggi._core import core_set_eval_table
+    from .eval_weights import TUNED_SCALARS, TUNED_PST
+    if TUNED_SCALARS is not None:
+        core_set_eval_table(1, TUNED_SCALARS, TUNED_PST)
 except Exception:
     _HAVE_CORE = False
 
@@ -171,6 +175,7 @@ class SearchOptions:
     tt_eval: int = 1                # 0 off; 1 a stored TT bound replaces static_eval for RFP / NMP gate / futility, + futility floor
     root_fail_high: bool = False    # a root fail-high goes first in the redo and is kept if the redo times out inside it
     king_safety: int = 1            # 0 off; 1 palace safety units in king danger; 2 = 1 without the v1 exposure term
+    eval_weights: int = 0           # 0 the hand-set evaluator weights; 1 the tuned table (janggi/eval_weights.py)
 
     _ALIASES = {
         "tt": "use_tt", "lmr": "use_lmr", "ext": "use_ext", "nmp": "use_nmp",
@@ -184,12 +189,12 @@ class SearchOptions:
         "rootguard": "root_guard_mode", "mthreat": "mate_threat_mode", "chkprune": "use_chk_prune", "qguard": "qsearch_guard",
         "lmrcap": "use_lmr_cap", "soltab": "soldier_table", "mob": "mobility_weight",
         "lockscale": "lock_scale", "nullchk": "null_check_guard", "tteval": "tt_eval",
-        "rootfh": "root_fail_high", "ksafe": "king_safety",
+        "rootfh": "root_fail_high", "ksafe": "king_safety", "evalw": "eval_weights",
     }
     # Integer modes and their valid range. The core treats an unknown mode as
     # off, so a typo in an A/B spec would silently measure the unguarded engine.
     _RANGES = {"qsearch_guard": (0, 6), "lock_scale": (0, 2), "null_check_guard": (0, 2),
-               "tt_eval": (0, 1), "king_safety": (0, 2)}
+               "tt_eval": (0, 1), "king_safety": (0, 2), "eval_weights": (0, 1)}
 
     @classmethod
     def parse(cls, spec: str) -> "SearchOptions":
@@ -207,7 +212,7 @@ class SearchOptions:
             if field_name not in cls.__dataclass_fields__:
                 raise ValueError(f"unknown search option {key!r}")
             if field_name in ("ext_budget", "node_limit", "eval_version", "soldier_table", "mobility_weight", "mate_threat_mode", "root_guard_mode", "qsearch_guard",
-                              "lock_scale", "null_check_guard", "tt_eval", "king_safety"):
+                              "lock_scale", "null_check_guard", "tt_eval", "king_safety", "eval_weights"):
                 values[field_name] = int(raw)
                 if field_name in cls._RANGES:
                     lo, hi = cls._RANGES[field_name]
@@ -354,6 +359,7 @@ class Engine:
             tteval=opts.tt_eval,
             rootfh=1 if opts.root_fail_high else 0,
             ksafe=opts.king_safety,
+            evalw=opts.eval_weights,
         )
         deadline = (time.time() + self.time_limit) if self.time_limit else 0.0
         frm, to, cap, score, depth, pv = core_search(

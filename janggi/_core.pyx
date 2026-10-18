@@ -1005,10 +1005,113 @@ cdef int _palace_units(int* piece, int* side, int* amap, int gr, int gc,
     return u
 
 
+# --- evaluator weights (evalw) -------------------------------------------
+# Every constant of _evaluate2 lives in EW (and the piece-square table EWP), so
+# the evaluator can be re-weighted without touching its code. Table 0 is the
+# hand-set evaluator, value for value (evalw=0 is node-identical to the build
+# before this table existed); table 1 is filled from Python
+# (janggi/eval_weights.py through core_set_eval_table) with a tuned set.
+# core_reset / core_eval copy the chosen table into EW / EWP.
+DEF NEW = 45
+DEF EW_PV = 0          # 0..7: material by piece code (6, the general, never tuned)
+DEF EW_PH_CAN = 8      # cannon loses EW * (256 - phase) / 256 as the board empties
+DEF EW_PH_SOL = 9      # soldier gains it
+DEF EW_PH_ELE = 10     # elephant loses it
+DEF EW_SOL_ADV = 11
+DEF EW_SOL_CEN = 12
+DEF EW_SOL_CONN = 13
+DEF EW_SOL_PAL = 14
+DEF EW_CHA_CEN = 15
+DEF EW_CHA_OPEN = 16
+DEF EW_CHA_HALF = 17
+DEF EW_CHA_RANK = 18
+DEF EW_CAN_CEN = 19
+DEF EW_CAN_SCR = 20
+DEF EW_CAN_PAL = 21
+DEF EW_HOR_CEN = 22
+DEF EW_HOR_LEG = 23    # per free horse leg, 4 is par
+DEF EW_ELE_LEG = 24    # per free elephant leg, 4 is par
+DEF EW_GUA_PAL = 25
+DEF EW_KD = 26         # king danger, percent of danger^2 / 900 (cap 8 * EW)
+DEF EW_GEN_EXP = 27
+DEF EW_UNDEF = 28      # 28..35: attacked and undefended, by piece code
+DEF EW_DEF = 36        # 36..43: attacked and defended, by piece code
+DEF EW_MOB = 44        # coverage mobility; table 0 takes it from the mob option
+DEF NEWP = 720         # EWP[piece code * 90 + square seen from the owner's side]
+cdef int EW[NEW]
+cdef int EWP[NEWP]
+cdef int EWT[2][NEW]
+cdef int EWPT[2][NEWP]
+cdef int g_evalw = 0
+cdef int g_use_pst = 0
+EWT[0][:] = [0, 1300, 700, 500, 300, 200, 10000, 300,
+             150, 60, 40,
+             8, 10, 8, 30,
+             3, 25, 12, 20,
+             3, 15, 40,
+             3, 7,
+             5,
+             12,
+             100, 12,
+             0, 360, 260, 190, 130, 25, 0, 90,
+             0, 120, 90, 65, 40, 0, 0, 25,
+             0]
+EWT[1][:] = EWT[0][:]
+cdef int _ewi
+for _ewi in range(NEWP):
+    EWPT[0][_ewi] = 0
+    EWPT[1][_ewi] = 0
+cdef int g_ewt1_pst = 0      # table 1 has a non-zero piece-square table
+
+
+cdef void _load_eval_table(int which, int mob):
+    """Make table `which` the live evaluator weights. Table 0 takes its
+    mobility weight from the mob option (as before EW existed)."""
+    global g_evalw, g_use_pst
+    cdef int i
+    if which != 1:
+        which = 0
+    g_evalw = which
+    for i in range(NEW):
+        EW[i] = EWT[which][i]
+    for i in range(NEWP):
+        EWP[i] = EWPT[which][i]
+    if which == 0:
+        EW[EW_MOB] = mob
+        g_use_pst = 0
+    else:
+        g_use_pst = g_ewt1_pst
+_load_eval_table(0, 0)
+
+
+def core_set_eval_table(int which, scalars, pst=None):
+    """Fill table 1 (the only writable one) with NEW scalars and an optional
+    NEWP-entry piece-square table."""
+    global g_ewt1_pst
+    cdef int i
+    if which != 1:
+        raise ValueError("only table 1 can be set")
+    if len(scalars) != NEW:
+        raise ValueError(f"need {NEW} scalars, got {len(scalars)}")
+    for i in range(NEW):
+        EWT[1][i] = int(scalars[i])
+    g_ewt1_pst = 0
+    for i in range(NEWP):
+        EWPT[1][i] = int(pst[i]) if pst is not None else 0
+        if EWPT[1][i] != 0:
+            g_ewt1_pst = 1
+
+
+def core_get_eval_table(int which):
+    if which not in (0, 1):
+        raise ValueError("table 0 or 1")
+    return [EWT[which][i] for i in range(NEW)], [EWPT[which][i] for i in range(NEWP)]
+
+
 cdef int _evaluate2(int* piece, int* side):
     """HAN-positive static score. See the block comment above."""
     cdef int score = 0, material = 0, phase_mat = 0
-    cdef int r, c, idx, pc, s, base, v, adv, i, d, nr, nc, lk
+    cdef int r, c, idx, pc, s, base, v, adv, i, d, nr, nc, lk, kcap
     cdef int ghr = -1, ghc = -1, gcr = -1, gcc = -1
     cdef int amap[180]
     cdef int awt[180]
@@ -1080,17 +1183,17 @@ cdef int _evaluate2(int* piece, int* side):
             if pc == 0:
                 continue
             s = side[idx]
-            base = PVAL[pc]
+            base = EW[EW_PV + pc]
 
             # --- phase-adjusted material -------------------------------
             # A cannon needs a screen, so it loses value as the board empties;
             # soldiers gain value; elephants lose a little.
             if pc == 2:
-                base -= (150 * (256 - phase)) // 256
+                base -= (EW[EW_PH_CAN] * (256 - phase)) // 256
             elif pc == 5:
-                base += (60 * (256 - phase)) // 256
+                base += (EW[EW_PH_SOL] * (256 - phase)) // 256
             elif pc == 4:
-                base -= (40 * (256 - phase)) // 256
+                base -= (EW[EW_PH_ELE] * (256 - phase)) // 256
             material += base if s == 1 else -base
             v = base
 
@@ -1099,42 +1202,44 @@ cdef int _evaluate2(int* piece, int* side):
                 if g_soltab == 1:
                     v += SOLTAB1[adv]
                 else:
-                    v += adv * 8
+                    v += adv * EW[EW_SOL_ADV]
                 if 3 <= c <= 5:
-                    v += 10
+                    v += EW[EW_SOL_CEN]
                 # connected soldiers defend each other
                 if c > 0 and piece[idx-1] == 5 and side[idx-1] == s:
-                    v += 8
+                    v += EW[EW_SOL_CONN]
                 # a soldier that has reached the enemy palace is a real threat
                 if _in_palace(r, c, 3 - s):
-                    v += 30
+                    v += EW[EW_SOL_PAL]
             elif pc == 1:    # chariot
-                v += (4 - (c-4 if c >= 4 else 4-c)) * 3
+                v += (4 - (c-4 if c >= 4 else 4-c)) * EW[EW_CHA_CEN]
                 if occ_file[c] == 1:          # only the chariot on this file
-                    v += 25
+                    v += EW[EW_CHA_OPEN]
                 elif sol_file[s-1][c] == 0:   # no own soldier blocking it
-                    v += 12
+                    v += EW[EW_CHA_HALF]
                 # sitting on the rank the enemy soldiers start on
                 if (s == 1 and r == 6) or (s == 2 and r == 3):
-                    v += 20
+                    v += EW[EW_CHA_RANK]
             elif pc == 2:    # cannon
-                v += (4 - (c-4 if c >= 4 else 4-c)) * 3
+                v += (4 - (c-4 if c >= 4 else 4-c)) * EW[EW_CAN_CEN]
                 if _cannon_screen(piece, r, c):
-                    v += 15
+                    v += EW[EW_CAN_SCR]
                 # 면포: a cannon inside its own palace covering the general
                 if _in_palace(r, c, s):
-                    v += 40
+                    v += EW[EW_CAN_PAL]
             elif pc == 3:    # horse
-                v += (4 - (c-4 if c >= 4 else 4-c)) * 3
+                v += (4 - (c-4 if c >= 4 else 4-c)) * EW[EW_HOR_CEN]
                 freelegs = _horse_free_legs(piece, r, c)
-                v += freelegs * 7 - 28        # 4 free legs is par
+                v += (freelegs - 4) * EW[EW_HOR_LEG]   # 4 free legs is par
             elif pc == 4:    # elephant
                 freelegs = _eleph_free_legs(piece, r, c)
-                v += freelegs * 5 - 20
+                v += (freelegs - 4) * EW[EW_ELE_LEG]
             elif pc == 7:    # guard: stay home with the general
                 if _in_palace(r, c, s):
-                    v += 12
+                    v += EW[EW_GUA_PAL]
 
+            if g_use_pst:
+                v += EWP[pc * 90 + (idx if s == 1 else (ROWS - 1 - r) * COLS + c)]
             score += v if s == 1 else -v
 
 
@@ -1157,13 +1262,14 @@ cdef int _evaluate2(int* piece, int* side):
             danger_h += _palace_units(piece, side, amap, ghr, ghc, 1, ng[0], force[1], danger_h)
         if gcr >= 0:
             danger_c += _palace_units(piece, side, amap, gcr, gcc, 2, ng[1], force[0], danger_c)
-        v = (danger_h * danger_h) // 900
-        score -= v if v < 800 else 800
-        v = (danger_c * danger_c) // 900
-        score += v if v < 800 else 800
+        kcap = 8 * EW[EW_KD]
+        v = (EW[EW_KD] * danger_h * danger_h) // 90000
+        score -= v if v < kcap else kcap
+        v = (EW[EW_KD] * danger_c * danger_c) // 90000
+        score += v if v < kcap else kcap
     else:
-        score -= (danger_h * danger_h) // 900
-        score += (danger_c * danger_c) // 900
+        score -= (EW[EW_KD] * danger_h * danger_h) // 90000
+        score += (EW[EW_KD] * danger_c * danger_c) // 90000
 
     # --- general exposure (v1 term, kept; ksafe=2 drops it) ---------------
     if g_ksafe != 2:
@@ -1173,14 +1279,14 @@ cdef int _evaluate2(int* piece, int* side):
                 nr = ghr + ORTH[d][0]; nc = ghc + ORTH[d][1]
                 if _in_palace(nr, nc, 1) and piece[nr*COLS+nc] == 0:
                     v += 1
-            score -= v * 12
+            score -= v * EW[EW_GEN_EXP]
         if gcr >= 0:
             v = 0
             for d in range(4):
                 nr = gcr + ORTH[d][0]; nc = gcc + ORTH[d][1]
                 if _in_palace(nr, nc, 2) and piece[nr*COLS+nc] == 0:
                     v += 1
-            score += v * 12
+            score += v * EW[EW_GEN_EXP]
 
     # --- loose pieces (v1 term, kept) ------------------------------------
     cdef int risk_h = 0, risk_c = 0
@@ -1191,10 +1297,10 @@ cdef int _evaluate2(int* piece, int* side):
         s = side[idx]
         if s == 1:
             if amap[90 + idx]:
-                risk_h += DEF_W[pc] if amap[idx] else UNDEF_W[pc]
+                risk_h += EW[EW_DEF + pc] if amap[idx] else EW[EW_UNDEF + pc]
         else:
             if amap[idx]:
-                risk_c += DEF_W[pc] if amap[90 + idx] else UNDEF_W[pc]
+                risk_c += EW[EW_DEF + pc] if amap[90 + idx] else EW[EW_UNDEF + pc]
     score -= risk_h
     score += risk_c
 
@@ -1204,7 +1310,7 @@ cdef int _evaluate2(int* piece, int* side):
             score += material * 2
         elif g_base_ply >= 80:
             score += material
-    if g_mob:
+    if EW[EW_MOB]:
         # Coverage-based mobility: squares each side bears on, minus the ones
         # its own pieces stand on (bearing on your own piece is defence, not
         # mobility). amap[0..89] is HAN (side 1), amap[90..179] is CHO.
@@ -1213,7 +1319,7 @@ cdef int _evaluate2(int* piece, int* side):
                 cov_h += 1
             if amap[90 + i] and side[i] != 2:
                 cov_c += 1
-        score += g_mob * (cov_h - cov_c)
+        score += EW[EW_MOB] * (cov_h - cov_c)
     if g_lockscale == 2 and g_base_ply >= 80:
         # lockscale=2: deployed_score / lk -- the same ranking as the lock,
         # but material stays at 1x PVAL, so every PVAL-unit margin in the
@@ -2090,7 +2196,8 @@ def core_reset(int max_depth, int ext_budget, int use_tt=1, int use_lmr=1,
                int use_hist_lmr=1, int use_hist_malus=0,
                int use_root_guard=0, int use_mate_threat=0, int use_chk_prune=0,
                int use_lmr_cap=0, int soltab=0, int mob=0, int qguard=0,
-               int lockscale=0, int nullchk=0, int tteval=0, int rootfh=0, int ksafe=0):
+               int lockscale=0, int nullchk=0, int tteval=0, int rootfh=0, int ksafe=0,
+               int evalw=0):
     """Reset TT / killers / history / stats for a fresh Engine.search()."""
     global g_nodes, g_qnodes, g_tthits, g_timeout, g_ext, g_maxdepth
     global g_use_tt, g_use_lmr, g_use_ext, g_use_nmp, g_use_pvs
@@ -2135,6 +2242,7 @@ def core_reset(int max_depth, int ext_budget, int use_tt=1, int use_lmr=1,
     g_use_tteval = tteval; g_tteval_used = 0
     g_use_rootfh = rootfh; g_rootfh_rot = 0; g_rootfh_kept = 0
     g_ksafe = ksafe
+    _load_eval_table(evalw, mob)
     for i in range(204):
         root_iter[i] = 0
         root_bound[i] = 0
@@ -2517,17 +2625,19 @@ def core_see(int[::1] piece, int[::1] side, int fr, int fc, int tr, int tc):
 
 
 def core_eval(int[::1] piece, int[::1] side, int base_ply, int version=1,
-              int soltab=0, int mob=0, int lockscale=0, int ksafe=0):
+              int soltab=0, int mob=0, int lockscale=0, int ksafe=0, int evalw=0):
     """evaluate(board, include_mobility=False). version=1 is the original."""
-    # The evaluator reads g_soltab / g_mob / g_lockscale / g_ksafe, which
-    # core_reset sets for a search. A direct evaluate() call must not inherit
-    # whatever the last search left there, so the knobs are explicit here and
-    # restored afterwards.
+    # The evaluator reads g_soltab / g_mob / g_lockscale / g_ksafe and the
+    # weight table, which core_reset sets for a search. A direct evaluate()
+    # call must not inherit whatever the last search left there, so the knobs
+    # are explicit here and restored afterwards.
     global g_soltab, g_mob, g_lockscale, g_ksafe
     cdef int keep_soltab = g_soltab, keep_mob = g_mob
     cdef int keep_lockscale = g_lockscale, keep_ksafe = g_ksafe
+    cdef int keep_evalw = g_evalw, keep_ewmob = EW[EW_MOB]
     g_soltab = soltab; g_mob = mob
     g_lockscale = lockscale; g_ksafe = ksafe
+    _load_eval_table(evalw, mob)
     try:
         global g_base_ply, h_top
         g_base_ply = base_ply
@@ -2538,6 +2648,41 @@ def core_eval(int[::1] piece, int[::1] side, int base_ply, int version=1,
     finally:
         g_soltab = keep_soltab; g_mob = keep_mob
         g_lockscale = keep_lockscale; g_ksafe = keep_ksafe
+        _load_eval_table(keep_evalw, keep_ewmob)
+
+
+def core_eval2_probe(int[::1] piece, int[::1] side, int base_ply,
+                     int soltab=0, int lockscale=1, int ksafe=1, int scale=1000):
+    """The evaluator's feature vector: f[k] such that _evaluate2 with any
+    weight table EW is sum(EW[k] * f[k]) plus the piece-square entries (up to
+    integer truncation). Measured, not mirrored: each f[k] is _evaluate2 run
+    with every weight zero but EW[k] = scale, divided by scale -- the same
+    code the search runs. The general's own material (slot 6) is skipped; it
+    cancels whenever both generals stand."""
+    global g_soltab, g_mob, g_lockscale, g_ksafe, g_use_pst
+    cdef int keep_soltab = g_soltab, keep_mob = g_mob
+    cdef int keep_lockscale = g_lockscale, keep_ksafe = g_ksafe
+    cdef int keep_evalw = g_evalw, keep_ewmob = EW[EW_MOB]
+    cdef int k, i
+    out = [0.0] * NEW
+    g_soltab = soltab; g_lockscale = lockscale; g_ksafe = ksafe
+    try:
+        global g_base_ply, h_top
+        g_base_ply = base_ply
+        h_top = 0
+        g_use_pst = 0
+        for k in range(NEW):
+            if k == EW_PV + 6 or k == EW_PV:
+                continue
+            for i in range(NEW):
+                EW[i] = 0
+            EW[k] = scale
+            out[k] = _evaluate2(&piece[0], &side[0]) / <double>scale
+        return out
+    finally:
+        g_soltab = keep_soltab; g_mob = keep_mob
+        g_lockscale = keep_lockscale; g_ksafe = keep_ksafe
+        _load_eval_table(keep_evalw, keep_ewmob)
 
 
 
