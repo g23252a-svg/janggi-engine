@@ -74,6 +74,14 @@ TUNED_SCALARS = [
     4,      # 47 mobility: cannon
     2,      # 48 mobility: horse
     2,      # 49 mobility: elephant
+    0,      # 50 threat: (unused)
+    0,      # 51 threat: chariot attacked by a cheaper piece
+    0,      # 52 threat: cannon
+    0,      # 53 threat: horse
+    0,      # 54 threat: elephant
+    0,      # 55 threat: soldier
+    0,      # 56 threat: (general)
+    0,      # 57 threat: guard
 ]
 
 TUNED_PST = [

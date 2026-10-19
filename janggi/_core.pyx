@@ -232,9 +232,12 @@ KFORCE[0]=0; KFORCE[1]=2; KFORCE[2]=1; KFORCE[3]=1; KFORCE[4]=0; KFORCE[5]=0; KF
 #
 # amap layout: amap[(s - 1) * 90 + sq], s = 1 HAN / 2 CHO.
 cdef void _attack_maps(int* piece, int* side, int* amap):
-    _attack_maps_w(piece, side, amap, NULL, NULL)
+    _attack_maps_w(piece, side, amap, NULL, NULL, NULL)
 
-cdef void _attack_maps_w(int* piece, int* side, int* amap, int* awt, int* mobc):
+cdef void _attack_maps_w(int* piece, int* side, int* amap, int* awt, int* mobc, int* amin):
+    # amin (may be NULL): amin[(s-1)*90 + sq] = the lowest PVAL among side s's
+    # pieces bearing on sq (left as the caller initialised it if none) --
+    # the threat terms of evalw tables 1/2.
     # mobc (may be NULL): mobc[(s-1)*8 + pc] counts, for chariots, cannons,
     # horses and elephants, the squares each bears on that do not hold a
     # piece of its own side -- per-piece-type mobility for evalw table 1.
@@ -286,6 +289,8 @@ cdef void _attack_maps_w(int* piece, int* side, int* amap, int* awt, int* mobc):
                     nr = r+dr; nc = c+dc
                     while 0 <= nr < ROWS and 0 <= nc < COLS:
                         amap[base + nr*COLS+nc] = 1
+                        if amin != NULL and PVAL[pc] < amin[base + nr*COLS+nc]:
+                            amin[base + nr*COLS+nc] = PVAL[pc]
                         if mobc != NULL and (piece[nr*COLS+nc] == 0 or side[nr*COLS+nc] != s):
                             mobc[base // 90 * 8 + pc] += 1
                         if awt != NULL:
@@ -300,6 +305,8 @@ cdef void _attack_maps_w(int* piece, int* side, int* amap, int* awt, int* mobc):
                         while (0 <= nr < ROWS and 0 <= nc < COLS and _is_pdiag(nr,nc)
                                and _same_half(r,nr)):
                             amap[base + nr*COLS+nc] = 1
+                            if amin != NULL and PVAL[pc] < amin[base + nr*COLS+nc]:
+                                amin[base + nr*COLS+nc] = PVAL[pc]
                             if mobc != NULL and (piece[nr*COLS+nc] == 0 or side[nr*COLS+nc] != s):
                                 mobc[base // 90 * 8 + pc] += 1
                             if awt != NULL:
@@ -324,6 +331,8 @@ cdef void _attack_maps_w(int* piece, int* side, int* amap, int* awt, int* mobc):
                             if t == 2:
                                 break        # never bears on a cannon
                             amap[base + nr*COLS+nc] = 1
+                            if amin != NULL and PVAL[pc] < amin[base + nr*COLS+nc]:
+                                amin[base + nr*COLS+nc] = PVAL[pc]
                             if mobc != NULL and (piece[nr*COLS+nc] == 0 or side[nr*COLS+nc] != s):
                                 mobc[base // 90 * 8 + pc] += 1
                             if awt != NULL:
@@ -348,6 +357,8 @@ cdef void _attack_maps_w(int* piece, int* side, int* amap, int* awt, int* mobc):
                                 if t == 2:
                                     break
                                 amap[base + nr*COLS+nc] = 1
+                                if amin != NULL and PVAL[pc] < amin[base + nr*COLS+nc]:
+                                    amin[base + nr*COLS+nc] = PVAL[pc]
                                 if mobc != NULL and (piece[nr*COLS+nc] == 0 or side[nr*COLS+nc] != s):
                                     mobc[base // 90 * 8 + pc] += 1
                                 if awt != NULL:
@@ -363,6 +374,8 @@ cdef void _attack_maps_w(int* piece, int* side, int* amap, int* awt, int* mobc):
                         nr = r + HL[i][2]; nc = c + HL[i][3]
                         if 0 <= nr < ROWS and 0 <= nc < COLS:
                             amap[base + nr*COLS+nc] = 1
+                            if amin != NULL and PVAL[pc] < amin[base + nr*COLS+nc]:
+                                amin[base + nr*COLS+nc] = PVAL[pc]
                             if mobc != NULL and (piece[nr*COLS+nc] == 0 or side[nr*COLS+nc] != s):
                                 mobc[base // 90 * 8 + pc] += 1
                             if awt != NULL:
@@ -378,6 +391,8 @@ cdef void _attack_maps_w(int* piece, int* side, int* amap, int* awt, int* mobc):
                         nr = r + EL[i][4]; nc = c + EL[i][5]
                         if 0 <= nr < ROWS and 0 <= nc < COLS:
                             amap[base + nr*COLS+nc] = 1
+                            if amin != NULL and PVAL[pc] < amin[base + nr*COLS+nc]:
+                                amin[base + nr*COLS+nc] = PVAL[pc]
                             if mobc != NULL and (piece[nr*COLS+nc] == 0 or side[nr*COLS+nc] != s):
                                 mobc[base // 90 * 8 + pc] += 1
                             if awt != NULL:
@@ -388,14 +403,20 @@ cdef void _attack_maps_w(int* piece, int* side, int* amap, int* awt, int* mobc):
                 nr = r + fwd
                 if 0 <= nr < ROWS:
                     amap[base + nr*COLS+c] = 1
+                    if amin != NULL and PVAL[pc] < amin[base + nr*COLS+c]:
+                        amin[base + nr*COLS+c] = PVAL[pc]
                     if awt != NULL:
                         awt[base + nr*COLS+c] += KDANGER[pc]
                 if c - 1 >= 0:
                     amap[base + r*COLS+c-1] = 1
+                    if amin != NULL and PVAL[pc] < amin[base + r*COLS+c-1]:
+                        amin[base + r*COLS+c-1] = PVAL[pc]
                     if awt != NULL:
                         awt[base + r*COLS+c-1] += KDANGER[pc]
                 if c + 1 < COLS:
                     amap[base + r*COLS+c+1] = 1
+                    if amin != NULL and PVAL[pc] < amin[base + r*COLS+c+1]:
+                        amin[base + r*COLS+c+1] = PVAL[pc]
                     if awt != NULL:
                         awt[base + r*COLS+c+1] += KDANGER[pc]
                 if _is_pdiag(r, c):
@@ -404,6 +425,8 @@ cdef void _attack_maps_w(int* piece, int* side, int* amap, int* awt, int* mobc):
                         nc = c - 1 if i == 0 else c + 1
                         if 0 <= nr < ROWS and 0 <= nc < COLS and _is_pdiag(nr, nc):
                             amap[base + nr*COLS+nc] = 1
+                            if amin != NULL and PVAL[pc] < amin[base + nr*COLS+nc]:
+                                amin[base + nr*COLS+nc] = PVAL[pc]
                             if awt != NULL:
                                 awt[base + nr*COLS+nc] += KDANGER[pc]
 
@@ -413,6 +436,8 @@ cdef void _attack_maps_w(int* piece, int* side, int* amap, int* awt, int* mobc):
                         nr = r + ORTH[d][0]; nc = c + ORTH[d][1]
                         if _in_palace(nr, nc, s):
                             amap[base + nr*COLS+nc] = 1
+                            if amin != NULL and PVAL[pc] < amin[base + nr*COLS+nc]:
+                                amin[base + nr*COLS+nc] = PVAL[pc]
                             if awt != NULL:
                                 awt[base + nr*COLS+nc] += KDANGER[pc]
                     if _is_pdiag(r, c):
@@ -420,6 +445,8 @@ cdef void _attack_maps_w(int* piece, int* side, int* amap, int* awt, int* mobc):
                             nr = r + DIAG[d][0]; nc = c + DIAG[d][1]
                             if _in_palace(nr, nc, s) and _is_pdiag(nr, nc):
                                 amap[base + nr*COLS+nc] = 1
+                                if amin != NULL and PVAL[pc] < amin[base + nr*COLS+nc]:
+                                    amin[base + nr*COLS+nc] = PVAL[pc]
                                 if awt != NULL:
                                     awt[base + nr*COLS+nc] += KDANGER[pc]
 
@@ -1030,7 +1057,7 @@ cdef int _palace_units(int* piece, int* side, int* amap, int gr, int gc,
 # before this table existed); table 1 is filled from Python
 # (janggi/eval_weights.py through core_set_eval_table) with a tuned set.
 # core_reset / core_eval copy the chosen table into EW / EWP.
-DEF NEW = 50
+DEF NEW = 58
 DEF EW_PV = 0          # 0..7: material by piece code (6, the general, never tuned)
 DEF EW_PH_CAN = 8      # cannon loses EW * (256 - phase) / 256 as the board empties
 DEF EW_PH_SOL = 9      # soldier gains it
@@ -1057,6 +1084,7 @@ DEF EW_DEF = 36        # 36..43: attacked and defended, by piece code
 DEF EW_MOB = 44        # coverage mobility; table 0 takes it from the mob option
 DEF EW_TEMPO = 45      # side-to-move bonus, added by _eval_for (0 in table 0)
 DEF EW_MOBT = 46       # 46..49: per-type mobility of chariot, cannon, horse, elephant (table 1 only)
+DEF EW_THR = 50        # 50..57: a piece attacked by a cheaper enemy piece, by piece code (tables 1/2 only)
 DEF NEWP = 720         # EWP[piece code * 90 + square seen from the owner's side]
 cdef int EW[NEW]
 cdef int EWP[NEWP]
@@ -1076,7 +1104,8 @@ EWT[0][:] = [0, 1300, 700, 500, 300, 200, 10000, 300,
              0, 360, 260, 190, 130, 25, 0, 90,
              0, 120, 90, 65, 40, 0, 0, 25,
              0,
-             0, 0, 0, 0, 0]
+             0, 0, 0, 0, 0,
+             0, 0, 0, 0, 0, 0, 0, 0]
 EWT[1][:] = EWT[0][:]
 EWT[2][:] = EWT[0][:]
 cdef int _ewi
@@ -1163,6 +1192,9 @@ cdef int _evaluate2(int* piece, int* side):
     cdef int awt[180]
     cdef int mobc[16]
     cdef int* mobp = NULL
+    cdef int amin[180]
+    cdef int* aminp = NULL
+    cdef int thr[16]
     cdef int sol_file[2][9]        # soldiers per side per file
     cdef int occ_file[9]           # any piece on the file (for open-file chariots)
     cdef int phase, freelegs, danger_h = 0, danger_c = 0
@@ -1225,8 +1257,12 @@ cdef int _evaluate2(int* piece, int* side):
     if g_evalw:
         for i in range(16):
             mobc[i] = 0
+            thr[i] = 0
         mobp = mobc
-    _attack_maps_w(piece, side, amap, awt, mobp)
+        for i in range(180):
+            amin[i] = 1 << 20
+        aminp = amin
+    _attack_maps_w(piece, side, amap, awt, mobp, aminp)
 
     for r in range(ROWS):
         for c in range(COLS):
@@ -1382,6 +1418,16 @@ cdef int _evaluate2(int* piece, int* side):
     if mobp != NULL:
         for i in range(1, 5):
             score += EW[EW_MOBT + i - 1] * (mobc[i] - mobc[8 + i])
+        # threats: a piece the enemy attacks with something cheaper than it
+        for idx in range(90):
+            pc = piece[idx]
+            if pc == 0 or pc == 6:
+                continue
+            s = side[idx]
+            if amin[(2 - s) * 90 + idx] < PVAL[pc]:
+                thr[(s - 1) * 8 + pc] += 1
+        for i in range(1, 8):
+            score -= EW[EW_THR + i] * (thr[i] - thr[8 + i])
     if EW[EW_MOB]:
         # Coverage-based mobility: squares each side bears on, minus the ones
         # its own pieces stand on (bearing on your own piece is defence, not
