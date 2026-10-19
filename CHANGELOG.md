@@ -40,8 +40,8 @@ held-out ones no better -- 200,000 positions are far too few).
 | 1.5.1 against 1.5.0 | result |
 | --- | --- |
 | 60k | +34 =0 -26, 56.7% (pairs CI 43.6..69.7) |
-| 300k | R300 |
-| 1M | R1M |
+| 300k | +66 =0 -54 of 120, 55.0%, +35 elo (pairs CI 46.7..63.3) |
+| 1M (the live server searches 1-2.4M) | +24 =0 -26 of 50, 48.0% (pairs CI 36.0..60.0) |
 
 Replaying the two lost games' positions at 1.2M nodes, every choice scored by
 Fairy-Stockfish (2 s): on 2026-10-19, 1.5.0 loses 29 cp a move and matches
@@ -49,7 +49,15 @@ its first choice 28 times in 53, 1.5.1 loses 16 and matches 34, and at move 25
 1.5.1 plays the move Fairy-Stockfish wants instead of the raid; on 2026-10-18
 the two are level (51 and 52 cp a move). Self-play between the two does not
 tell them apart at these sample sizes; the release rests on "not worse" there
-and on the lost game's positions.
+and on the lost game's positions. Over all 230 games it is +124 =0 -106: not
+weaker at any budget, not a measured gain at any either.
+
+The lost-game regression tests pass with it, with one change: in the
+2026-10-10 position the shipped engine now proves a mate in five at the UI's
+budget instead of the mate in four the game was won with. Fairy-Stockfish
+certifies both moves as forced mates; the test now pins the shortest mate on
+the hand-set evaluator (`evalw=0`) and asks the shipped one for a proven mate
+of at most five moves.
 
 ## 1.5.0 — the evaluator, re-weighted against a much stronger engine
 

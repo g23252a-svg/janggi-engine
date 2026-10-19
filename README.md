@@ -59,7 +59,8 @@ against live human opponents on online services.
   bonus and per-type mobility, was fitted to Fairy-Stockfish's scores of about
   100,000 quiet positions (`tools/evaltune/`, `janggi/eval_weights.py`).
   Against the hand-set weights it scores 77% at 60k and 90% at 300k nodes per
-  move; `evalw=0` brings the hand-set evaluator back, node for node.
+  move; `evalw=0` brings the hand-set evaluator back, node for node. 1.5.1
+  re-fitted it on twice the positions, including games our own engine played.
 - **Opening book** built from recorded games (기보) — present but **off by
   default**, because the one in the repository was measured to cost about 138
   centipawns a move against simply searching. See the note in `server.py`.

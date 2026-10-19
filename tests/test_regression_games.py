@@ -287,11 +287,30 @@ def test_each_campaign_flag_reaches_the_core(spec):
     assert any(run(off + "," + spec, ply) != run(off, ply) for ply in (100, 53))
 
 
+# Fairy-Stockfish certifies both: (4, 8, 1, 8) mates in four, (4, 8, 2, 8) in
+# five. 1.5.1's evaluator reaches the five-move mate first at this budget; it
+# is just as forced, and the next search continues it.
+MATE_IN_FIVE = (4, 8, 2, 8)
+
+
 @needs_core
 def test_finds_the_mate_in_four_that_won_a_real_game():
-    _, move, score = _search_2026_10_10(SearchOptions(node_limit=SHIPPING_BUDGET))
+    """On the hand-set evaluator the search finds the shortest mate, the move
+    the game was won with."""
+    _, move, score = _search_2026_10_10(SearchOptions(node_limit=SHIPPING_BUDGET, eval_weights=0))
     assert move is not None and move.as_tuple() == MATE_IN_FOUR, (
         f"played {move.as_tuple() if move else None} with score {score}; "
         f"{MATE_IN_FOUR} mates in four"
     )
     assert score > MATE_BOUND
+
+
+@needs_core
+def test_the_shipped_engine_proves_a_forced_mate_in_the_won_game():
+    """The shipped defaults prove a forced mate of at most five moves at the
+    UI's budget, with one of the two mating moves Fairy-Stockfish certifies."""
+    _, move, score = _search_2026_10_10(SearchOptions(node_limit=SHIPPING_BUDGET))
+    assert move is not None and move.as_tuple() in (MATE_IN_FOUR, MATE_IN_FIVE), (
+        f"played {move.as_tuple() if move else None} with score {score}"
+    )
+    assert score >= 1_000_000 - 10        # mate within ten plies, five moves

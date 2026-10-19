@@ -1,0 +1,349 @@
+{
+ "rows": [
+  {
+   "ply": 2,
+   "fsf_best": "c10d8",
+   "hand": "g10f8",
+   "tuned": "g10f8",
+   "loss_hand": -23,
+   "loss_tuned": -9
+  },
+  {
+   "ply": 4,
+   "fsf_best": "g10f8",
+   "hand": "c7b7",
+   "tuned": "a7b7",
+   "loss_hand": 20,
+   "loss_tuned": 19
+  },
+  {
+   "ply": 6,
+   "fsf_best": "g7f7",
+   "hand": "g7f7",
+   "tuned": "g7f7",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 8,
+   "fsf_best": "g10f8",
+   "hand": "c7b7",
+   "tuned": "c7b7",
+   "loss_hand": 30,
+   "loss_tuned": 25
+  },
+  {
+   "ply": 10,
+   "fsf_best": "g10f8",
+   "hand": "b10d7",
+   "tuned": "b10d7",
+   "loss_hand": 3,
+   "loss_tuned": 12
+  },
+  {
+   "ply": 12,
+   "fsf_best": "c7d7",
+   "hand": "b10d7",
+   "tuned": "b10d7",
+   "loss_hand": 31,
+   "loss_tuned": 22
+  },
+  {
+   "ply": 14,
+   "fsf_best": "g10f8",
+   "hand": "f7f6",
+   "tuned": "g10f8",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 16,
+   "fsf_best": "f7f6",
+   "hand": "g10f8",
+   "tuned": "h3h9",
+   "loss_hand": -15,
+   "loss_tuned": 44
+  },
+  {
+   "ply": 18,
+   "fsf_best": "f7f6",
+   "hand": "i7i6",
+   "tuned": "i7i6",
+   "loss_hand": 28,
+   "loss_tuned": 27
+  },
+  {
+   "ply": 20,
+   "fsf_best": "i8i6",
+   "hand": "i8i6",
+   "tuned": "i8i6",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 22,
+   "fsf_best": "h9h1",
+   "hand": "h9h1",
+   "tuned": "h9h1",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 24,
+   "fsf_best": "h1h9",
+   "hand": "h1h9",
+   "tuned": "h1h9",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 26,
+   "fsf_best": "h8f9",
+   "hand": "h8f9",
+   "tuned": "h8f9",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 28,
+   "fsf_best": "e8c8",
+   "hand": "f7g7",
+   "tuned": "e9f8",
+   "loss_hand": 91,
+   "loss_tuned": 128
+  },
+  {
+   "ply": 30,
+   "fsf_best": "f9h8",
+   "hand": "f9h8",
+   "tuned": "f9h8",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 32,
+   "fsf_best": "h8f9",
+   "hand": "f10e9",
+   "tuned": "f7f6",
+   "loss_hand": 131,
+   "loss_tuned": 60
+  },
+  {
+   "ply": 34,
+   "fsf_best": "d10e10",
+   "hand": "f6g6",
+   "tuned": "a6b6",
+   "loss_hand": 33,
+   "loss_tuned": 70
+  },
+  {
+   "ply": 36,
+   "fsf_best": "d10e10",
+   "hand": "d10e10",
+   "tuned": "d10e10",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 38,
+   "fsf_best": "e8b8",
+   "hand": "e8b8",
+   "tuned": "e8b8",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 40,
+   "fsf_best": "b8b1",
+   "hand": "b8b1",
+   "tuned": "d8f9",
+   "loss_hand": 0,
+   "loss_tuned": -93
+  },
+  {
+   "ply": 42,
+   "fsf_best": "b8b1",
+   "hand": "b8b1",
+   "tuned": "b8b1",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 44,
+   "fsf_best": "f7g7",
+   "hand": "f7g7",
+   "tuned": "f7g7",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 46,
+   "fsf_best": "b1b7",
+   "hand": "b1b7",
+   "tuned": "b1b7",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 48,
+   "fsf_best": "f8e9",
+   "hand": "a6a5",
+   "tuned": "h1b1",
+   "loss_hand": 108,
+   "loss_tuned": 72
+  },
+  {
+   "ply": 50,
+   "fsf_best": "f8e9",
+   "hand": "a6b6",
+   "tuned": "a6b6",
+   "loss_hand": 34,
+   "loss_tuned": 42
+  },
+  {
+   "ply": 52,
+   "fsf_best": "e9f10",
+   "hand": "e9f10",
+   "tuned": "e9f10",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 54,
+   "fsf_best": "b10e8",
+   "hand": "a6b6",
+   "tuned": "a6b6",
+   "loss_hand": 155,
+   "loss_tuned": 155
+  },
+  {
+   "ply": 56,
+   "fsf_best": "b7e7",
+   "hand": "b10e8",
+   "tuned": "a10a1",
+   "loss_hand": -8,
+   "loss_tuned": 141
+  },
+  {
+   "ply": 58,
+   "fsf_best": "e8b10",
+   "hand": "d7e7",
+   "tuned": "d7e7",
+   "loss_hand": 14,
+   "loss_tuned": 104
+  },
+  {
+   "ply": 60,
+   "fsf_best": "b7f7",
+   "hand": "b7f7",
+   "tuned": "b7f7",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 62,
+   "fsf_best": "b6c6",
+   "hand": "a10a6",
+   "tuned": "f7f3",
+   "loss_hand": 285,
+   "loss_tuned": 127
+  },
+  {
+   "ply": 64,
+   "fsf_best": "b1i1",
+   "hand": "b6c6",
+   "tuned": "b6c6",
+   "loss_hand": 31,
+   "loss_tuned": 56
+  },
+  {
+   "ply": 66,
+   "fsf_best": "d10d9",
+   "hand": "d10d9",
+   "tuned": "d10d9",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 68,
+   "fsf_best": "a3a2",
+   "hand": "a3a5",
+   "tuned": "a3a5",
+   "loss_hand": 89,
+   "loss_tuned": 74
+  },
+  {
+   "ply": 70,
+   "fsf_best": "f10e9",
+   "hand": "f10e9",
+   "tuned": "f10e9",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 72,
+   "fsf_best": "e9d9",
+   "hand": "e9d9",
+   "tuned": "e9d9",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 74,
+   "fsf_best": "e7d7",
+   "hand": "f9d8",
+   "tuned": "f9d8",
+   "loss_hand": 69,
+   "loss_tuned": 65
+  },
+  {
+   "ply": 76,
+   "fsf_best": "b9g9",
+   "hand": "d10e9",
+   "tuned": "a6b6",
+   "loss_hand": 353,
+   "loss_tuned": 330
+  },
+  {
+   "ply": 78,
+   "fsf_best": "f7b7",
+   "hand": "d10e9",
+   "tuned": "d10e9",
+   "loss_hand": 151,
+   "loss_tuned": 151
+  },
+  {
+   "ply": 80,
+   "fsf_best": "a5a3",
+   "hand": "b7b4",
+   "tuned": "b7b4",
+   "loss_hand": 217,
+   "loss_tuned": 155
+  },
+  {
+   "ply": 82,
+   "fsf_best": "b4d4",
+   "hand": "b4d4",
+   "tuned": "a5d5",
+   "loss_hand": 0,
+   "loss_tuned": -62
+  },
+  {
+   "ply": 84,
+   "fsf_best": "b6c6",
+   "hand": "a5a1",
+   "tuned": "a5a1",
+   "loss_hand": 255,
+   "loss_tuned": 288
+  }
+ ],
+ "summary": {
+  "positions": 42,
+  "hand_top": 18,
+  "tuned_top": 17,
+  "hand_avg_loss": 50.666666666666664,
+  "tuned_avg_loss": 51.595238095238095
+ },
+ "nodes": 1200000,
+ "movetime": 2000
+}
