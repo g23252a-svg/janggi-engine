@@ -214,3 +214,23 @@ def test_the_tuned_pst_is_left_right_symmetric_and_palace_bound():
             for c in range(9):
                 if not (r <= 2 and 3 <= c <= 5):
                     assert pst[pc * 90 + r * 9 + c] == 0
+
+
+@needs_core
+def test_the_threat_feature_counts_a_piece_attacked_by_a_cheaper_one():
+    """Slots 50..57: a piece the enemy attacks with something cheaper than it.
+    A HAN chariot in front of a CHO soldier is one (the soldier is worth
+    less); the CHO soldier attacked by that chariot is not (the chariot is
+    worth more). Table 0 never computes the term."""
+    import janggi._core as core
+    from janggi.board import HAN
+    grid = [[None] * 9 for _ in range(10)]
+    grid[1][4] = ("K", HAN)
+    grid[8][3] = ("K", CHO)
+    grid[5][4] = ("C", HAN)          # chariot
+    grid[6][4] = ("J", CHO)          # soldier, bears on (5, 4)
+    b = Board.from_grid(grid, HAN)
+    f, _ = core.core_eval2_probe(b._pc, b._sd, 10)
+    assert f[51] == -1.0             # score -= EW[THR+chariot] * (HAN threatened - CHO threatened)
+    assert f[55] == 0.0              # the soldier is attacked by something dearer: no threat
+    assert all(x == 0.0 for i, x in enumerate(f[50:58]) if i not in (1, 5))
