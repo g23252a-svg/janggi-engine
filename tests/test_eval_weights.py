@@ -234,3 +234,41 @@ def test_the_threat_feature_counts_a_piece_attacked_by_a_cheaper_one():
     assert f[51] == -1.0             # score -= EW[THR+chariot] * (HAN threatened - CHO threatened)
     assert f[55] == 0.0              # the soldier is attacked by something dearer: no threat
     assert all(x == 0.0 for i, x in enumerate(f[50:58]) if i not in (1, 5))
+
+
+@needs_core
+def test_the_tuned_table_scores_a_position_and_its_mirror_exactly_opposite():
+    """The colour mirror (rows flipped, sides swapped) must evaluate to the
+    negation under the shipped table too -- piece-square, mobility, tempo-free
+    evaluation and threat terms alike -- at every lock phase."""
+    import janggi._core as core
+    from janggi.board import ROWS, COLS
+
+    def mirror(board):
+        m = Board()
+        for r in range(ROWS):
+            for c in range(COLS):
+                p = board.grid[r][c]
+                if p is not None:
+                    m.grid[ROWS - 1 - r][c] = (p[0], -p[1])
+        return m
+    for b, _ in _positions(80, seed=13, plies=80):
+        mb = mirror(b)
+        for ply in (10, 90, 130):
+            assert core.core_eval(b._pc, b._sd, ply, 2, 0, 2, 1, 1, 1) == \
+                -core.core_eval(mb._pc, mb._sd, ply, 2, 0, 2, 1, 1, 1)
+
+
+def test_resume_refuses_a_log_played_under_another_table_one(tmp_path):
+    """A log records the shipped table 1; resuming it after eval_weights.py
+    changed must refuse, not mix two different engines under one spec."""
+    import json
+    from janggi import match
+    log = tmp_path / "m.jsonl"
+    log.write_text(json.dumps({"seed": 7, "a_is_cho": True, "winner": "cho", "plies": 1, "reason": "mate",
+                               "a": "", "b": "lmr=0", "budget": {"nodes": 300, "time": None, "depth": 3},
+                               "table1": "0000000000000000"}) + "\n")
+    with pytest.raises(SystemExit, match="different match"):
+        match.run_match(match.Config("A", 3, 300, None, ""), match.Config("B", 3, 300, None, "lmr=0"),
+                        games=2, seed=7, opening_plies=4, log_path=str(log), resume=True,
+                        table1="1111111111111111")

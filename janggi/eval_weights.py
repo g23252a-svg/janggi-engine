@@ -11,9 +11,9 @@ restriction, which matches janggi/board.py):
   in the set too (1,200 labelled at 10,000 nodes, 600 at 20,000);
 - 730 games in which our own engine chose the moves (600 by 1.5.0 at 30,000
   nodes labelled at 20,000, 130 by 1.4.0 at 20,000 labelled at 10,000), so
-  the positions our search steers into -- the cannon raid that lost the
-  2026-10-19 game among them -- are represented, not only Fairy-Stockfish's
-  own.
+  positions our own search steers into are represented, not only
+  Fairy-Stockfish's own (these games start from random openings; the lost
+  games themselves are not in the set).
 
 Positions in check, positions whose best move is a capture and mates were left
 out, leaving 205,033 quiet ones; a tenth of the games were held out.
@@ -28,7 +28,9 @@ pull toward the hand-set weights is light (1e-6; 1.5.0 used 1e-4, which held
 the fit measurably short). Held-out squared error, all with a fitted bias,
 tempo and scale: hand-set 0.008906, re-weighted
 0.006792, with the piece-square table 0.005534
-(1.5.0's table on the same held-out games: 0.006003).
+(each table with its own fitted bias, tempo and scale on the training games
+and scored on the same held-out games: 1.5.0's table 0.006003, this one
+0.005554).
 
 ``TUNED_SCALARS`` follows the EW layout of janggi/_core.pyx (DEF EW_*);
 ``TUNED_PST`` is EWP: piece code * 90 + square seen from the owner's side, row

@@ -19,12 +19,13 @@ helped.
 
 So the evaluator was fitted again, on more of the positions our engine
 actually reaches: 600 games in which 1.5.0 chose the moves and
-Fairy-Stockfish scored every position, plus 600 more Fairy-Stockfish games
-with deeper labels (20,000 nodes) -- 205,033 quiet positions in all, against
-100,470 for 1.5.0 -- and with a far lighter pull toward the hand-set weights,
-which had held 1.5.0's fit measurably short. Held-out squared error falls from
-0.006003 (1.5.0's table) to 0.005554, and on the positions from our own
-engine's games from 0.006125 to 0.005597.
+Fairy-Stockfish scored every position, and 130 that 1.4.0 played the same way
+(10,000-node labels), plus 600 more Fairy-Stockfish games with deeper labels
+(20,000 nodes) -- 205,033 quiet positions in all, against 100,470 for 1.5.0 -- and with a far lighter pull toward the hand-set weights,
+which had held 1.5.0's fit measurably short. Held-out squared error (each
+table with its own fitted bias, tempo and scale) falls from 0.006003 (1.5.0's
+table) to 0.005554, and on the positions from our own engine's games from
+0.006125 to 0.005597.
 
 New in the table: a threat term per piece type -- a piece the enemy attacks
 with something cheaper -- computed with the attack maps the evaluator already
