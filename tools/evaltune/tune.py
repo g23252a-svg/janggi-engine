@@ -1,6 +1,6 @@
 """Fit the evaluator weights to FSF labels (Texel-style, win-probability space).
 
-usage: tune.py DATA.npz OUT.json [--pst] [--lam-s 1e-4] [--lam-p 1e-4] [--iters 3000]
+usage: tune.py DATA.npz OUT.json [--pst] [--lam-s 1e-6] [--lam-p 1e-4] [--iters 3000]
 
 z = F.w + Pm.p + bias + tempo*stm            (HAN-positive, our eval units)
 loss = mean (sigma(K z) - sigma(Kf y))^2 + lam_s sum((w-w0)/s)^2 + lam_p sum(p^2)/1e4
@@ -17,7 +17,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument("data")
 ap.add_argument("out")
 ap.add_argument("--pst", action="store_true")
-ap.add_argument("--lam-s", type=float, default=1e-4)
+ap.add_argument("--lam-s", type=float, default=1e-6)   # 1.5.0 used 1e-4, which held the fit short
 ap.add_argument("--lam-p", type=float, default=1e-4)
 ap.add_argument("--iters", type=int, default=3000)
 ap.add_argument("--lr", type=float, default=2.0)
@@ -138,7 +138,9 @@ names = ["-", "PV_C", "PV_P", "PV_M", "PV_S", "PV_J", "PV_K", "PV_G", "PH_CAN", 
          "SOL_ADV", "SOL_CEN", "SOL_CONN", "SOL_PAL", "CHA_CEN", "CHA_OPEN", "CHA_HALF", "CHA_RANK",
          "CAN_CEN", "CAN_SCR", "CAN_PAL", "HOR_CEN", "HOR_LEG", "ELE_LEG", "GUA_PAL", "KD", "GEN_EXP",
          "U-", "U_C", "U_P", "U_M", "U_S", "U_J", "U_K", "U_G", "D-", "D_C", "D_P", "D_M", "D_S", "D_J", "D_K", "D_G", "MOB",
-         "TEMPO", "MOB_C", "MOB_P", "MOB_M", "MOB_S"]
+         "TEMPO", "MOB_C", "MOB_P", "MOB_M", "MOB_S",
+         "T-", "THR_C", "THR_P", "THR_M", "THR_S", "THR_J", "THR_K", "THR_G"]
+names += [f"slot{i}" for i in range(len(names), NEW)]
 print("\nweights: name w0 -> scalars" + (" -> pst" if args.pst else ""))
 for i in range(NEW):
     if free[i] or i == 1:

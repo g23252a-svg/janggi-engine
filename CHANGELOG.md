@@ -3,6 +3,62 @@
 Versions before 0.4.0 predate this file; `setup.py` sat at 0.3.0 through all
 three of the patches below, which is what 1.0.0's versioning work is about.
 
+## 1.5.1 — re-fitted on the positions our own engine reaches
+
+A user played CHO on 2026-10-19 with 1.5.0 at the deepest setting and lost
+again, to an opponent who played as precisely as Fairy-Stockfish (4 cp lost a
+move, 49 of 52 moves within 20 cp of its choice). 1.5.0 itself had improved a
+lot -- 17 cp a move against 1.4.0's 47 on the 2026-10-18 game, 34 of 53 moves
+Fairy-Stockfish's first choice, 3 cp a move over moves 31-60 -- but two moves
+decided the game: at move 25 the cannon raided b8 (77 cp; the opponent's
+chariot came down the a-file it had stopped guarding) and at move 71 the
+general stepped aside (268 cp). The raid is not a time problem: the server's
+recommendation is exactly what the engine plays at 1.2-2.4M nodes (depth 13),
+and at depth 12 it plays the right move, so thinking longer would not have
+helped.
+
+So the evaluator was fitted again, on more of the positions our engine
+actually reaches: 600 games in which 1.5.0 chose the moves and
+Fairy-Stockfish scored every position, and 130 that 1.4.0 played the same way
+(10,000-node labels), plus 600 more Fairy-Stockfish games with deeper labels
+(20,000 nodes) -- 205,033 quiet positions in all, against 100,470 for 1.5.0 -- and with a far lighter pull toward the hand-set weights,
+which had held 1.5.0's fit measurably short. Held-out squared error (each
+table with its own fitted bias, tempo and scale) falls from 0.006003 (1.5.0's
+table) to 0.005554, and on the positions from our own engine's games from
+0.006125 to 0.005597.
+
+New in the table: a threat term per piece type -- a piece the enemy attacks
+with something cheaper -- computed with the attack maps the evaluator already
+builds, for tables 1 and 2 only (table 0 is still node-identical to 1.4.0,
+and table 1 with these weights at zero is node-identical to 1.5.0). It earns
+little (the quiet positions it is fitted on rarely contain a real threat) and
+the fit gives it 0-24 cp. Two other ideas were measured offline and dropped:
+a phase-tapered piece-square table (worse held out) and a small neural network
+on piece placement (fits the training positions four times better and the
+held-out ones no better -- 200,000 positions are far too few).
+
+| 1.5.1 against 1.5.0 | result |
+| --- | --- |
+| 60k | +34 =0 -26, 56.7% (pairs CI 43.6..69.7) |
+| 300k | +66 =0 -54 of 120, 55.0%, +35 elo (pairs CI 46.7..63.3) |
+| 1M (the live server searches 1-2.4M) | +24 =0 -26 of 50, 48.0% (pairs CI 36.0..60.0) |
+
+Replaying the two lost games' positions at 1.2M nodes, every choice scored by
+Fairy-Stockfish (2 s): on 2026-10-19, 1.5.0 loses 29 cp a move and matches
+its first choice 28 times in 53, 1.5.1 loses 16 and matches 34, and at move 25
+1.5.1 plays the move Fairy-Stockfish wants instead of the raid; on 2026-10-18
+the two are level (51 and 52 cp a move). Self-play between the two does not
+tell them apart at these sample sizes; the release rests on "not worse" there
+and on the lost game's positions. Over all 230 games it is +124 =0 -106: not
+weaker at any budget, not a measured gain at any either.
+
+The lost-game regression tests pass with it, with one change: in the
+2026-10-10 position the shipped engine now proves a mate in five at the UI's
+budget instead of the mate in four the game was won with. Fairy-Stockfish
+certifies both moves as forced mates; the test now pins the shortest mate on
+the hand-set evaluator (`evalw=0`) and asks the shipped one for a proven mate
+of at most five moves.
+
 ## 1.5.0 — the evaluator, re-weighted against a much stronger engine
 
 A user played HAN on 2026-10-18, followed every one of the engine's 42

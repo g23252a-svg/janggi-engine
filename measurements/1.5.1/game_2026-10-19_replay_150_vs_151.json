@@ -1,0 +1,437 @@
+{
+ "rows": [
+  {
+   "ply": 1,
+   "fsf_best": "h1g3",
+   "hand": "c1d3",
+   "tuned": "c1d3",
+   "loss_hand": -10,
+   "loss_tuned": -10
+  },
+  {
+   "ply": 3,
+   "fsf_best": "a4b4",
+   "hand": "h1g3",
+   "tuned": "a4b4",
+   "loss_hand": 39,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 5,
+   "fsf_best": "a4b4",
+   "hand": "h3e3",
+   "tuned": "a4b4",
+   "loss_hand": 8,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 7,
+   "fsf_best": "e2e1",
+   "hand": "h3e3",
+   "tuned": "h3e3",
+   "loss_hand": 9,
+   "loss_tuned": 9
+  },
+  {
+   "ply": 9,
+   "fsf_best": "a1a5",
+   "hand": "a1a5",
+   "tuned": "a1a5",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 11,
+   "fsf_best": "f1e2",
+   "hand": "h3e3",
+   "tuned": "f1e2",
+   "loss_hand": -7,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 13,
+   "fsf_best": "d1e2",
+   "hand": "d1e2",
+   "tuned": "f1e2",
+   "loss_hand": 0,
+   "loss_tuned": -37
+  },
+  {
+   "ply": 15,
+   "fsf_best": "g4f4",
+   "hand": "g4g5",
+   "tuned": "g4f4",
+   "loss_hand": -5,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 17,
+   "fsf_best": "i1i2",
+   "hand": "i4i5",
+   "tuned": "i4i5",
+   "loss_hand": 50,
+   "loss_tuned": 58
+  },
+  {
+   "ply": 19,
+   "fsf_best": "d3e5",
+   "hand": "e4d4",
+   "tuned": "c4c5",
+   "loss_hand": 48,
+   "loss_tuned": -7
+  },
+  {
+   "ply": 21,
+   "fsf_best": "a5a6",
+   "hand": "a5a6",
+   "tuned": "a5a6",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 23,
+   "fsf_best": "i1i4",
+   "hand": "b1d4",
+   "tuned": "b1d4",
+   "loss_hand": 48,
+   "loss_tuned": 48
+  },
+  {
+   "ply": 25,
+   "fsf_best": "b3b6",
+   "hand": "b3b8",
+   "tuned": "b3b6",
+   "loss_hand": 66,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 27,
+   "fsf_best": "b4b5",
+   "hand": "b4b5",
+   "tuned": "b4b5",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 29,
+   "fsf_best": "c5c6",
+   "hand": "c5c6",
+   "tuned": "c5c6",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 31,
+   "fsf_best": "d3b4",
+   "hand": "b2f2",
+   "tuned": "b2f2",
+   "loss_hand": -78,
+   "loss_tuned": -78
+  },
+  {
+   "ply": 33,
+   "fsf_best": "b5c5",
+   "hand": "b5c5",
+   "tuned": "b5c5",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 35,
+   "fsf_best": "f2d2",
+   "hand": "g3f5",
+   "tuned": "f2d2",
+   "loss_hand": 80,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 37,
+   "fsf_best": "d4b7",
+   "hand": "i5h5",
+   "tuned": "d4b7",
+   "loss_hand": 99,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 39,
+   "fsf_best": "e3c3",
+   "hand": "e3c3",
+   "tuned": "e3c3",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 41,
+   "fsf_best": "e2d1",
+   "hand": "e2d1",
+   "tuned": "e2d1",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 43,
+   "fsf_best": "c3e3",
+   "hand": "c3c8",
+   "tuned": "c3c8",
+   "loss_hand": 24,
+   "loss_tuned": -50
+  },
+  {
+   "ply": 45,
+   "fsf_best": "f1e2",
+   "hand": "f1e2",
+   "tuned": "f1e2",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 47,
+   "fsf_best": "i1i3",
+   "hand": "i1i3",
+   "tuned": "i1i3",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 49,
+   "fsf_best": "b7e5",
+   "hand": "b7e5",
+   "tuned": "b7e5",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 51,
+   "fsf_best": "g5g6",
+   "hand": "d1d2",
+   "tuned": "g3h5",
+   "loss_hand": 24,
+   "loss_tuned": -33
+  },
+  {
+   "ply": 53,
+   "fsf_best": "i3c3",
+   "hand": "i3c3",
+   "tuned": "i3c3",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 55,
+   "fsf_best": "d1d2",
+   "hand": "d1d2",
+   "tuned": "d1d2",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 57,
+   "fsf_best": "c5b5",
+   "hand": "c5b5",
+   "tuned": "c5b5",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 59,
+   "fsf_best": "c8c1",
+   "hand": "c8c1",
+   "tuned": "c8c1",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 61,
+   "fsf_best": "h5g3",
+   "hand": "c3c9",
+   "tuned": "c3c9",
+   "loss_hand": 56,
+   "loss_tuned": 66
+  },
+  {
+   "ply": 63,
+   "fsf_best": "c9c2",
+   "hand": "d2d1",
+   "tuned": "d2d1",
+   "loss_hand": 65,
+   "loss_tuned": 56
+  },
+  {
+   "ply": 65,
+   "fsf_best": "c1c7",
+   "hand": "c1c7",
+   "tuned": "c1c7",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 67,
+   "fsf_best": "g5f5",
+   "hand": "g5f5",
+   "tuned": "g5f5",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 69,
+   "fsf_best": "e4d4",
+   "hand": "e4d4",
+   "tuned": "e4d4",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 71,
+   "fsf_best": "d4e4",
+   "hand": "d4e4",
+   "tuned": "d4e4",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 73,
+   "fsf_best": "f1e2",
+   "hand": "f1e2",
+   "tuned": "f1e2",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 75,
+   "fsf_best": "e2f2",
+   "hand": "e2f2",
+   "tuned": "e2f2",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 77,
+   "fsf_best": "c7h7",
+   "hand": "g1e4",
+   "tuned": "c7c10",
+   "loss_hand": 73,
+   "loss_tuned": -48
+  },
+  {
+   "ply": 79,
+   "fsf_best": "g1i4",
+   "hand": "c9c2",
+   "tuned": "g1i4",
+   "loss_hand": -64,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 81,
+   "fsf_best": "h5f6",
+   "hand": "h5f6",
+   "tuned": "h5f6",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 83,
+   "fsf_best": "c2c5",
+   "hand": "c2c7",
+   "tuned": "c2c7",
+   "loss_hand": 4,
+   "loss_tuned": 4
+  },
+  {
+   "ply": 85,
+   "fsf_best": "c6c2",
+   "hand": "c10c4",
+   "tuned": "d4e4",
+   "loss_hand": 391,
+   "loss_tuned": 127
+  },
+  {
+   "ply": 87,
+   "fsf_best": "f6h7",
+   "hand": "c6e6",
+   "tuned": "c6e6",
+   "loss_hand": 131,
+   "loss_tuned": 131
+  },
+  {
+   "ply": 89,
+   "fsf_best": "f6h7",
+   "hand": "f6h7",
+   "tuned": "f6h7",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 91,
+   "fsf_best": "e6f6",
+   "hand": "e6f6",
+   "tuned": "e6f6",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 93,
+   "fsf_best": "c10g10",
+   "hand": "c10i10",
+   "tuned": "c10h10",
+   "loss_hand": 331,
+   "loss_tuned": 332
+  },
+  {
+   "ply": 95,
+   "fsf_best": "f6f8",
+   "hand": "i5i6",
+   "tuned": "f6f7",
+   "loss_hand": 1,
+   "loss_tuned": 1
+  },
+  {
+   "ply": 97,
+   "fsf_best": "f6f8",
+   "hand": "f6f8",
+   "tuned": "e10g10",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 99,
+   "fsf_best": "f2f1",
+   "hand": "i5h5",
+   "tuned": "i5h5",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 101,
+   "fsf_best": "f2f1",
+   "hand": "f2f1",
+   "tuned": "f2f1",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 103,
+   "fsf_best": "f6f8",
+   "hand": "f6f8",
+   "tuned": "f6f8",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  },
+  {
+   "ply": 105,
+   "fsf_best": "h5g5",
+   "hand": "h5g5",
+   "tuned": "h5g5",
+   "loss_hand": 0,
+   "loss_tuned": 0
+  }
+ ],
+ "summary": {
+  "positions": 53,
+  "hand_top": 28,
+  "tuned_top": 34,
+  "hand_avg_loss": 29.18867924528302,
+  "tuned_avg_loss": 15.69811320754717
+ },
+ "nodes": 1200000,
+ "movetime": 2000
+}

@@ -35,7 +35,8 @@ HAND_SET = [0, 1300, 700, 500, 300, 200, 10000, 300,
             0, 360, 260, 190, 130, 25, 0, 90,
             0, 120, 90, 65, 40, 0, 0, 25,
             0,
-            0, 0, 0, 0, 0]
+            0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0]
 
 
 def _positions(count, seed=7, plies=50):
@@ -213,3 +214,61 @@ def test_the_tuned_pst_is_left_right_symmetric_and_palace_bound():
             for c in range(9):
                 if not (r <= 2 and 3 <= c <= 5):
                     assert pst[pc * 90 + r * 9 + c] == 0
+
+
+@needs_core
+def test_the_threat_feature_counts_a_piece_attacked_by_a_cheaper_one():
+    """Slots 50..57: a piece the enemy attacks with something cheaper than it.
+    A HAN chariot in front of a CHO soldier is one (the soldier is worth
+    less); the CHO soldier attacked by that chariot is not (the chariot is
+    worth more). Table 0 never computes the term."""
+    import janggi._core as core
+    from janggi.board import HAN
+    grid = [[None] * 9 for _ in range(10)]
+    grid[1][4] = ("K", HAN)
+    grid[8][3] = ("K", CHO)
+    grid[5][4] = ("C", HAN)          # chariot
+    grid[6][4] = ("J", CHO)          # soldier, bears on (5, 4)
+    b = Board.from_grid(grid, HAN)
+    f, _ = core.core_eval2_probe(b._pc, b._sd, 10)
+    assert f[51] == -1.0             # score -= EW[THR+chariot] * (HAN threatened - CHO threatened)
+    assert f[55] == 0.0              # the soldier is attacked by something dearer: no threat
+    assert all(x == 0.0 for i, x in enumerate(f[50:58]) if i not in (1, 5))
+
+
+@needs_core
+def test_the_tuned_table_scores_a_position_and_its_mirror_exactly_opposite():
+    """The colour mirror (rows flipped, sides swapped) must evaluate to the
+    negation under the shipped table too -- piece-square, mobility, tempo-free
+    evaluation and threat terms alike -- at every lock phase."""
+    import janggi._core as core
+    from janggi.board import ROWS, COLS
+
+    def mirror(board):
+        m = Board()
+        for r in range(ROWS):
+            for c in range(COLS):
+                p = board.grid[r][c]
+                if p is not None:
+                    m.grid[ROWS - 1 - r][c] = (p[0], -p[1])
+        return m
+    for b, _ in _positions(80, seed=13, plies=80):
+        mb = mirror(b)
+        for ply in (10, 90, 130):
+            assert core.core_eval(b._pc, b._sd, ply, 2, 0, 2, 1, 1, 1) == \
+                -core.core_eval(mb._pc, mb._sd, ply, 2, 0, 2, 1, 1, 1)
+
+
+def test_resume_refuses_a_log_played_under_another_table_one(tmp_path):
+    """A log records the shipped table 1; resuming it after eval_weights.py
+    changed must refuse, not mix two different engines under one spec."""
+    import json
+    from janggi import match
+    log = tmp_path / "m.jsonl"
+    log.write_text(json.dumps({"seed": 7, "a_is_cho": True, "winner": "cho", "plies": 1, "reason": "mate",
+                               "a": "", "b": "lmr=0", "budget": {"nodes": 300, "time": None, "depth": 3},
+                               "table1": "0000000000000000"}) + "\n")
+    with pytest.raises(SystemExit, match="different match"):
+        match.run_match(match.Config("A", 3, 300, None, ""), match.Config("B", 3, 300, None, "lmr=0"),
+                        games=2, seed=7, opening_plies=4, log_path=str(log), resume=True,
+                        table1="1111111111111111")

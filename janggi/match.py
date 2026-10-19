@@ -172,7 +172,7 @@ def _load_log(path: str | None) -> dict[tuple[int, bool], dict]:
 
 def run_match(a: Config, b: Config, games: int, seed: int, opening_plies: int,
               log_path: str | None = None, resume: bool = False,
-              table2: str | None = None) -> dict:
+              table2: str | None = None, table1: str | None = None) -> dict:
     """Play the match. With ``log_path`` every finished game is appended as one
     JSON line, and with ``resume`` games already in that log are counted and
     skipped -- so a run killed at game 19 of 60 continues from game 20 instead
@@ -193,13 +193,15 @@ def run_match(a: Config, b: Config, games: int, seed: int, opening_plies: int,
     for key, rec in list(done.items()):
         same = (rec.get("a") == a.spec and rec.get("b") == b.spec
                 and rec.get("budget", budget) == budget
-                and rec.get("table2") == table2)
+                and rec.get("table2") == table2
+                and rec.get("table1", table1) == table1)
         if not same:
             raise SystemExit(
                 f"--resume: {log_path} holds game {key} from a different match "
                 f"(a={rec.get('a')!r} b={rec.get('b')!r} budget={rec.get('budget')} "
-                f"table2={rec.get('table2')}); this run is a={a.spec!r} b={b.spec!r} "
-                f"budget={budget} table2={table2}. Use another --log."
+                f"table2={rec.get('table2')} table1={rec.get('table1')}); this run is "
+                f"a={a.spec!r} b={b.spec!r} budget={budget} table2={table2} table1={table1}. "
+                f"Use another --log."
             )
     skipped = 0
     pair_scores: list[float] = []
@@ -231,6 +233,7 @@ def run_match(a: Config, b: Config, games: int, seed: int, opening_plies: int,
                             "winner": winner, "plies": plies, "reason": reason,
                             "a": a.spec, "b": b.spec, "budget": budget,
                             **({"table2": table2} if table2 else {}),
+                            **({"table1": table1} if table1 else {}),
                             "spent": {"a": spent_a, "b": spent_b},
                         }) + "\n")
                         log_fh.flush()
@@ -412,6 +415,12 @@ def main() -> None:
         pool_logs(args.pool)
         return
 
+    table1 = None
+    try:
+        from janggi.eval_weights import TUNED_SCALARS, TUNED_PST
+        table1 = hashlib.sha256(json.dumps([list(TUNED_SCALARS), list(TUNED_PST)]).encode()).hexdigest()[:16]
+    except Exception:
+        pass
     table2 = None
     if args.table2:
         from janggi._core import core_set_eval_table
@@ -427,7 +436,7 @@ def main() -> None:
     budget = f"{args.time}s/move" if args.time else f"{args.nodes} nodes/move"
     print(f"A: depth<={a.depth} {budget} opts={a.spec or 'default'}")
     print(f"B: depth<={b.depth} {budget} opts={b.spec or 'default'}")
-    run_match(a, b, args.games, args.seed, args.opening_plies, args.log, args.resume, table2)
+    run_match(a, b, args.games, args.seed, args.opening_plies, args.log, args.resume, table2, table1)
 
 
 if __name__ == "__main__":
